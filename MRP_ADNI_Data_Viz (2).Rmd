@@ -723,7 +723,7 @@ library(dotwhisker)  # for visualizing regression results
 library(skimr)           # for variable summaries
 ```
 
-BUILD AND FIT A MODEL
+## BUILD AND FIT A MODEL
 
 We know that survival for ADNI participants depends on features: age, apoe, family history and so on.
 
@@ -737,13 +737,16 @@ set.seed(123) #This line sets the seed to 123. If you run any random number gene
 is.factor(surv_df$event)
 
 # Convert the event column to a factor
-# surv_df$event <- factor(surv_df$event, levels = c(0, 1), labels = c("No AD", "AD"))
+surv_df$event <- factor(surv_df$event, levels = c(0, 1), labels = c("No AD", "AD"))
 
 # WE know that ~27% of the participants in this data go onto getting a AD diagnosis
 
+surv_df %>% group_by() %>% count(DX)
+surv_df %>% group_by() %>% count(event)
+
 ```
 
-## DATA SPLITTING
+### DATA SPLITTING
 
 ```{r}
 
@@ -759,7 +762,19 @@ test_data  <- testing(data_split)
 View(test_data)
 ```
 
-## CREATE RECIPE AND ROLES
+### USING RECIPE AND ROLES - TIDYMODELS WEBSITE
+
+### USE A TRAINED WORKFLOW TO PREDICT
+
+Our goal was to predict whether a person gets a diagnosis of AD or not.
+
+1.  Built the model (`lr_mod`),
+
+2.  Created a preprocessing recipe (`surv_rec`),
+
+3.  Bundled the model and recipe (`surv_wflow`), and
+
+4.  Trained our workflow using a single call to `fit()`.
 
 To get started, let's create a recipe for a simple logistic regression model. Before training the model, we can use a recipe to create a few new predictors and conduct some preprocessing required by the model.
 
@@ -769,9 +784,60 @@ surv_rec <- recipe(event ~ AGE + APOE4 , data=train_data)
 summary(surv_rec)
 ```
 
-## CREATE FEATURES
+### FIT A MODEL 
+
+Logistic regression model using the parsnip package:
+
+```{r}
+lr_mod <-
+  logistic_reg() %>%
+  set_engine("glm")
+
+```
+
+We will want to use the recipe across several steps as we train and test our model. (we will process the recipe using the training set, apply the recipe to the training set and apply it to the test set) so to simplify this we will use a model workflow:
+
+```{r}
+surv_wf <- workflow() %>%
+  add_model(lr_mod) %>%
+  add_recipe(surv_rec)
+surv_wf
+```
 
 ```{r}
 
+surv_fit <- 
+  surv_wf %>%
+  fit(data=train_data)
 
+```
+
+Now we will use the trained workflow (surv_fit) to predict with the unseen test data, which we will do with a single call to predict(). The predict() method applies the recipe to the new data then passes them to the fitted model.
+
+```{r}
+
+predict(surv_fit, test_data)
+
+surv_aug <- augment(surv_fit, test_data)
+View(surv_aug)
+```
+
+### EVALUATE MODEL PERFORMANCE
+
+Let's use the area under the [ROC curve](https://bookdown.org/max/FES/measuring-performance.html#class-metrics) as our metric, computed using `roc_curve()` and `roc_auc()` from the [yardstick package](https://yardstick.tidymodels.org/).
+
+To generate a ROC curve, we need the predicted class probabilities for `late` and `on_time`, which we just calculated in the code chunk above. We can create the ROC curve with these values, using `roc_curve()` and then piping to the `autoplot()` method:
+
+```{r}
+
+surv_aug %>% 
+  roc_curve(truth = event, '.pred_No AD') %>% 
+  autoplot()
+
+```
+
+```{r}
+
+# Estimate the area under the curve:
+surv_aug %>% roc_auc(truth=event, '.pred_No AD')
 ```
