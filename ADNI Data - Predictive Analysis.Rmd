@@ -1,0 +1,473 @@
+---
+title: "ADNI Data - Predictive Analysis"
+output: html_document
+date: "2023-03-29"
+---
+
+# ADNI Data - Predictive Analysis
+
+## Install and load the relevant packages
+
+```{r}
+# install.packages("tidyverse")
+library(tidyverse)
+
+# install.packages("naniar")
+library(naniar)
+
+# install.packages("parsnip")
+
+# Load required libraries
+library(readr)
+library(dplyr)
+library(rsample)
+library(recipes)
+library(parsnip)
+library(workflows)
+# install.packages(caret)
+library(caret)
+# install.packages(yardstick)
+library(yardstick)
+
+# install.packages("remotes")
+# remotes::install_github("kaz-yos/tableone")
+library(tableone)
+
+# install.packages("survival")
+library(survival)
+
+# install.packages("survminer")
+library(survminer) # For creating more advanced and visually appealing survival analysis plots. 
+
+
+# install.packages("Hmisc")
+library(Hmisc)
+
+# install.packages("sjlabelled")
+library(sjlabelled)
+
+library(tidymodels)
+library(modeldata)
+
+# install.packages("ranger")
+library(ranger)
+
+
+```
+
+## Load, Manipulate & Clean the dataset for analysis (Re-name the columns as required).
+
+```{r}
+
+
+# setwd("C:/Users/shahu/OneDrive - The University of Melbourne/Documents/Downloads")
+
+# install.packages("ADNIMERGE_0.0.1.tar", repos = NULL, type = "source")
+library(ADNIMERGE)
+# View(adnimerge) 
+
+
+## clean viscode function 
+clean_viscode <- function(viscode) {
+  as.numeric(as.character(factor(viscode, levels = c("sc",
+        "bl", "m03", "m06", "m12", "m18", "m24", "m30", "m36",
+        "m42", "m48", "m54", "m60", "m66", "m72", "m78", "m84",
+        "m90", "m96", "m102", "m108", "m114", "m120", "m126",
+        "m132", "m144"), labels = c(-1, 0, 3, 6, 12, 18, 24,
+        30, 36, 42, 48, 54, 60, 66, 72, 78, 84, 90, 96, 102,
+        108, 114, 120, 126, 132, 144), ordered = F)))
+}
+
+
+# store required columns for data exploration
+adni_data <- adnimerge %>% mutate(DX = as.character(factor(DX, c("CN", "MCI", "Dementia"), c("CN", "MCI", "AD"))), DX.bl = as.character(factor(DX, c("CN", "MCI", "Dementia"), c("CN", "MCI", "AD"))), VISCODE = clean_viscode(VISCODE),
+        ) %>% 
+  sjlabelled::remove_all_labels() %>% 
+  select(RID, VISCODE, EXAMDATE, DX, AGE, 
+         PTEDUCAT, PTGENDER, APOE4, MMSE, 
+         mPACCtrailsB, DX.bl, MMSE.bl, mPACCtrailsB.bl) %>%
+  left_join(fhq %>% 
+              group_by(RID) %>%
+              summarise(
+               fam_hist_dad_dem = 1 * any(FHQDADAD == 'Yes', na.rm = T),
+               fam_hist_dad_ad = 1 * any(FHQDADAD == 'Yes', na.rm = T),
+               fam_hist_mum_dem = 1 * any(FHQDADAD == 'Yes', na.rm = T),
+               fam_hist_mum_ad = 1 * any(FHQMOMAD == 'Yes', na.rm = T)), by = 'RID') 
+
+
+# Create a duplicate for data manipulation: 
+adni1 <- adni_data
+
+# View(adni1)
+```
+
+## Data Cleaning:
+
+-   Identify and handle missing data appropriately. Impute or remove missing values based on the nature of the missingness and your research objectives.
+-   
+-   Check for and handle any potential data entry errors, outliers, or inconsistent data values that could impact the analysis
+
+------------------------------------------------------------------------
+
+```{r}
+
+# There are not a lot of rows with missing values for the features VISCODE, APOE4 and DX (in correlation with MMSE and trailsB score) so i decided to leave them all out 
+# remove rows where VISCODE = NA, APOE4 = NA
+adni2 <- adni1 %>% drop_na(VISCODE, APOE4, DX, MMSE, mPACCtrailsB)
+# View(adni2)
+
+
+# It is not recommended to impute missing family datam so I decided to leave them out of adni2 for now. 
+# I am storing these excluded participants in adni_nofamhist for future reference. 
+adni_nofamhist <- subset(adni1, is.na(fam_hist_dad_dem) | is.na(fam_hist_dad_ad) | is.na(fam_hist_mum_dem)| is.na(fam_hist_mum_ad))
+# View the RIDs for the fam hist rows with NA values 
+# view(adni_nofamhist)
+
+# Remove rows of participants without any family history 
+adni3 <- adni2 %>% drop_na(fam_hist_dad_dem, fam_hist_dad_ad, fam_hist_mum_dem, fam_hist_mum_ad)
+# View(adni3)
+
+```
+
+I used the fill function to impute missing data for the DX.bl row based on the DX given to a person for their 1st visit
+
+```{r}
+# View the rows with missing DX.bl values in adni3
+missingdxrows <- subset(adni3, is.na(DX.bl))
+# View(missingdxrows)
+
+# Function to fill missing values in DX.bl column
+fill_missing_dxbl <- function(df) {
+  df <- df %>%
+    group_by(RID) %>%
+    arrange(VISCODE) %>%
+    slice_head(n = 1) %>%
+    mutate(DX.bl = ifelse(is.na(DX.bl), DX, DX.bl)) %>%
+    ungroup()
+  return(df)
+}
+
+# Applying the function to fill missing values
+missingdxrows <- fill_missing_dxbl(missingdxrows)
+# View(missingdxrows)
+
+# SKIPPED FOR NOW BECAUASE IT IS NOT REQUIRED IN TABLE01
+```
+
+Review the missing data:
+
+```{r}
+gg_miss_var(missingdxrows) # plots the amount of missing values in each column of our data frame
+vis_miss(missingdxrows) # creates a heat-map showing where the missing N/a values in our columns are. This is a useful function to figure our where your data is in bigger data frames. 
+```
+
+## Data Description:
+
+-   Generate summary statistics and descriptive analyses to understand the distribution and central tendencies of variables. Identify key demographic characteristics of the study population, such as age, sex, and education level.
+
+### Table 01
+
+```{r}
+
+# prune the adni3 dataset to only have the columns we want in our table01
+adni4 <- adni3 %>% select(-DX.bl, -MMSE.bl, -mPACCtrailsB.bl, -EXAMDATE)
+# View(adni4)
+
+df <- adni4
+# Get time of AD event -- for each ID, arrange by time, pull out the rows with AD dx and take the first.
+progressors1 <- df %>% group_by(RID) %>% arrange(VISCODE) %>% filter(DX=="AD") %>% slice_head(n=1) %>% select(RID, VISCODE, DX, AGE, PTEDUCAT, PTGENDER, APOE4, MMSE, mPACCtrailsB, fam_hist_dad_dem, fam_hist_dad_ad, fam_hist_mum_dem, fam_hist_mum_ad)
+# view(progressors1)
+
+# remove all participants from the progressors group who had a AD diagnosis at Viscode = 0 
+progressors <- progressors1 %>% filter(VISCODE!=0)
+# view(progressors)
+
+# for non converters you can do similar but take the last visit
+non_progressors <- df %>% group_by(RID) %>% arrange(VISCODE) %>% filter(!any(DX=="AD")) %>% slice_tail(n=1) %>% select(RID, VISCODE, DX, AGE, PTEDUCAT, PTGENDER, APOE4, MMSE, mPACCtrailsB, fam_hist_dad_dem, fam_hist_dad_ad, fam_hist_mum_dem, fam_hist_mum_ad)
+# view(non_progressors)
+
+surv_df <- rbind(progressors, non_progressors) %>% mutate(event=as.numeric(DX=="AD"))
+View(surv_df)
+
+
+count_tablev6 <- surv_df %>%
+  group_by(event) %>%
+  summarise(Count = n())
+# View(count_tablev6)
+
+sum(count_tablev6$Count)
+
+
+## TABLE 01
+# Create a variable list which we want in Table 1
+listVars <- c("AGE", "PTEDUCAT", "PTGENDER", "APOE4", "MMSE", "mPACCtrailsB", "fam_hist_dad_dem", "fam_hist_dad_ad", "fam_hist_mum_dem", "fam_hist_mum_ad")
+ 
+# Define categorical variables
+# catVars <- c("DX","PTGENDER")
+catVars <- c("PTGENDER")
+
+table1 <- CreateTableOne(vars = listVars, data = surv_df, factorVars = catVars, strata = c("event"))
+print(table1)
+```
+
+## Building and Evaluating Predictive Models using the Tidymodel
+
+## Previous code - evaluating logistic regression model simply based on training dataset
+
+```{r}
+
+# # Set seed for reproducibility
+# set.seed(123)
+# 
+# # Convert the event column to a factor
+# surv_df$event <- factor(surv_df$event, levels = c(0, 1), labels = c("No AD", "AD"))
+# 
+# # convert to data frame from a tibble
+# df <- as.data.frame(surv_df)
+# # View(df)
+# 
+# # Split the data into training and testing sets
+# data_split <- initial_split(df, prop = 3/4)
+# train_data <- training(data_split)
+# # View(train_data)
+# test_data <- testing(data_split)
+# # View(test_data)
+
+# # ---------------------------------------------------
+# # Define recipe
+# surv_rec <- recipe(event ~ AGE + APOE4 , data = train_data)
+# 
+# # Define logistic regression model
+# lr_mod <- logistic_reg() %>% set_engine("glm")
+# 
+# # Define workflow
+# surv_wf <- workflow() %>% add_model(lr_mod) %>% add_recipe(surv_rec)
+#
+# surv_fit <- surv_wf %>% fit(data=train_data)
+# 
+# predict(surv_fit, test_data)
+# 
+# surv_aug <- augment(surv_fit, test_data) 
+# View(surv_aug)
+# 
+# surv_aug %>% roc_curve(truth = event, '.pred_No AD') %>% autoplot()
+# 
+# surv_aug %>% roc_auc(truth=event, '.pred_No AD')
+
+```
+
+## NEW code integrating k-fold cross validation
+
+<https://www.youtube.com/watch?v=CmOZy8WKpTM>
+
+```{r}
+
+# Set seed for reproducibility
+set.seed(123)
+
+# Convert the event column to a factor
+surv_df$event <- factor(surv_df$event, levels = c(0, 1), labels = c("No AD", "AD"))
+View(surv_df)
+# Split the data into training and testing sets
+
+data_split <- initial_split(surv_df, prop = 3/4, strata = event)
+train_data <- training(data_split)
+View(train_data)
+test_data <- testing(data_split)
+
+myControl = trainControl(method="cv", number=10)
+
+model1 = train(event ~ AGE + APOE4, data=train_data, trControl=myControl,
+               method="glm", family=binomial(link=logit), metric="Accuracy")
+model1
+
+  # Accuracy   Kappa   
+  # 0.7398894  0.136801
+
+model2 = train(event ~ AGE, data=train_data, trControl=myControl,
+               method="glm", family=binomial(link=logit), metric="Accuracy")
+model2
+
+  # Accuracy   Kappa
+  # 0.7283317  0 
+```
+
+<https://www.youtube.com/watch?v=TU3XAWk1tHI>
+
+```{r}
+
+
+# Set seed for reproducibility
+set.seed(123)
+
+# Convert the event column to a factor - I got an error so left the event column as a numeric instead of a factor 
+# surv_df$event <- factor(surv_df$event, levels = c(0, 1), labels = c("No AD", "AD"))
+# View(surv_df)
+# Split the data into training and testing sets
+
+data_split <- initial_split(surv_df, prop = 3/4, strata = event)
+train_data <- training(data_split)
+View(train_data)
+test_data <- testing(data_split)
+
+# Define recipe
+surv_rec <- recipe(event ~ AGE + APOE4 , data = train_data)
+
+# Define model
+lm_model <- linear_reg() %>% set_engine("lm") %>% set_mode("regression")
+lm_model
+
+# Create Workflow
+lm_workflow <- workflow() %>% add_model(lm_model) %>% add_recipe(surv_rec)
+
+
+# K-fold cross validation 
+cv_folds <- vfold_cv(train_data, v=5)
+
+# fit the model to the cross validation folds and check preformance
+model_fit <- lm_workflow %>% fit_resamples(resamples = cv_folds,
+                                            metrics = metric_set(rmse, rsq, mae))
+
+model_fit %>% 
+  collect_metrics() %>%
+  arrange(.metric)
+
+
+# average root mean square error along with its standard error
+# average root squared value 
+# average mean absolute error
+
+```
+
+## Apply it to the test set
+
+```{r}
+
+fit_lm <- lm_workflow %>% last_fit(split = data_split, metrics = metric_set(rmse, rsq, mae))
+
+fit_lm %>% 
+  collect_metrics() %>%
+  arrange(.metric)
+```
+
+### Note: you would use best fit if you were tuning here we use last fit because we are not tuning anything + since it's linear regression
+
+## GLM [ep81]
+
+```{r}
+
+# Set seed for reproducibility
+set.seed(123)
+
+df_glm <- surv_df
+
+# Convert the event column to a factor - I got an error so left the event column as a numeric instead of a factor 
+df_glm$event <- factor(df_glm$event, levels = c(0, 1), labels = c("No AD", "AD"))
+View(df_glm)
+
+# Split the data into training and testing sets
+data_split <- initial_split(df_glm, prop = 3/4, strata = event)
+train_data <- training(data_split)
+View(train_data)
+test_data <- testing(data_split)
+
+
+# Define recipe
+surv_glm <- recipe(event ~ AGE + APOE4 , data = train_data)
+
+# Define model
+glm_model <- logistic_reg() %>% set_engine("glm") %>% set_mode("classification")
+glm_model
+
+# Create Workflow
+glm_workflow <- workflow() %>% add_model(glm_model) %>% add_recipe(surv_glm)
+
+
+# K-fold cross validation 
+cv_folds <- vfold_cv(train_data, v=5, strata = event)
+
+# fit the model to the cross validation folds and check preformance
+model_fit_glm <- glm_workflow %>% fit_resamples(object=glm_model, 
+                                            preprocessor = surv_glm,
+                                            resamples = cv_folds,
+                                            metrics = metric_set(roc_auc, kap, accuracy))
+
+
+# average area under the curve
+
+
+fit_glm <- glm_workflow %>% last_fit(split = data_split, metrics = metric_set(roc_auc, kap, accuracy))
+split
+
+glm_test_pred <- bind_cols(test_data, fit_glm %>% collect_predictions() %>% select(starts_with(".pred_"))
+)
+
+View(glm_test_pred)
+
+# looking at key columns of interest
+head(glm_test_pred[, c("event", "AGE", "APOE4", ".pred_No AD", ".pred_AD", ".pred_class")])
+
+# confusion matrix 
+table("predicted class" = glm_test_pred$.pred_class, "observed class" = glm_test_pred$event)
+
+# area under the rock curve
+glm_test_pred %>% roc_curve(truth = event, '.pred_No AD') %>% autoplot()
+
+glm_test_pred %>% roc_curve(truth = event, '.pred_No AD') # defaults to first level of prediction class
+
+
+glm_test_pred %>% roc_curve(truth = event, '.pred_AD', event_level = "second")
+
+fit_glm %>% collect_metrics()
+
+
+```
+
+## Random Forest
+
+```{r}
+
+# Set seed for reproducibility
+set.seed(123)
+
+df_rf <- surv_df
+
+# Convert the event column to a factor - I got an error so left the event column as a numeric instead of a factor 
+# df_rf$event <- as.numeric(factor(df_rf$event, levels = c(0, 1), labels = c("No AD", "AD")))
+# View(df_rf)
+
+# Split the data into training and testing sets
+data_split_rf <- initial_split(df_rf, prop = 3/4, strata = event)
+train_data_rf <- training(data_split_rf)
+# View(train_data)
+test_data_rf <- testing(data_split_rf)
+
+# Define recipe for random forest model
+surv_rf <- recipe(event ~ AGE + APOE4, data = train_data_rf)
+
+# Define random forest model
+rf_model <- rand_forest() %>% set_engine("ranger") %>% set_mode("classification")
+
+# Create Workflow for random forest model
+rf_workflow <- workflow() %>% add_model(rf_model) %>% add_recipe(surv_rf)
+
+
+# K-fold cross validation 
+cv_folds_rf <- vfold_cv(train_data, v=5, strata = event)
+
+# Fit and evaluate random forest model using cross-validation
+model_fit_rf <- rf_workflow %>% fit_resamples(object = rf_model, 
+                                              preprocessor = surv_rf,
+                                              resamples = cv_folds_rf,
+                                              metrics = metric_set(roc_auc, kap, accuracy))
+
+# Evaluate performance on the test set
+fit_rf <- rf_workflow %>% last_fit(split = data_split_rf, metrics = metric_set(roc_auc, kap, accuracy))
+
+```
+
+## Gradient Boosting (GBM)
+
+```{r}
+
+```

@@ -1,0 +1,747 @@
+---
+title: "ADNI Data - Descriptive Analysis"
+output: html_document
+date: "2023-03-29"
+---
+
+# ADNI Data - Descriptive Analysis
+
+## Install and load the relevant packages
+
+### Install tidyverse for readr, dplyr, ggpolt2 and the other packages listed below
+
+```{r}
+# install.packages("tidyverse")
+library(tidyverse)
+
+# readr: For reading CSV files
+# dplyr: For data manipulation
+# ggplot2:For plots and graphs
+# tidyr: For tidying and reshaping data into a tidy format.
+# purrr: For functional programming and working with lists and vectors.
+# tibble: For creating and working with modern data frames.
+# stringr: For string manipulation and text processing.
+# forcats: For working with categorical data and factors.
+# lubridate: For working with dates and times.
+# magrittr: For creating expressive pipelines using the pipe operator %>%.
+# rlang: For advanced manipulation and programming with R expressions.
+```
+
+### Install the the naniar package:
+
+-   It provides various functions and visualization tools to handle, explore, and understand missing data patterns in your datasets.
+
+```{r}
+# install.packages("naniar")
+library(naniar)
+```
+
+### Install the 'zoo' package
+
+-   Missing Data Handling: The zoo package provides various methods for handling missing data in time series, including interpolation techniques like linear interpolation or using "last observation carried forward" (LOCF) method.
+
+```{r}
+
+# install.packages("zoo")
+library(zoo)
+```
+
+### Install the 'tableone' package
+
+-   The "tableone" package is used for generating summary tables and statistics (means, medians, counts, and percentages) for comparing characteristics between different treatment/demographic groups or other categorical variables in a dataset. It's particularly useful in the context of medical and epidemiological research, where you often want to compare baseline characteristics of different treatment groups or populations.
+
+The table can help quickly understand the distribution of variables (continuous, categorical, and time-to-event variables.) across different groups.
+
+```{r}
+# install.packages("tableone")
+library(tableone)
+
+# install.packages("remotes")
+# remotes::install_github("kaz-yos/tableone")
+library(tableone)
+
+```
+
+### Install packages for plotting survival analysis curves?
+
+```{r}
+# install.packages("survival")
+library(survival)
+
+# Survminer provides functions for creating more advances and visually appealing survival analysis plots. 
+# install.packages("survminer")
+library(survminer)
+```
+
+## Load, Manipulate & Clean the dataset for analysis (Re-name the columns as required).
+
+```{r}
+
+#For users of R, we have developed a data package “ADNIMERGE” which contains coded data, documentation, and analysis vignettes. It depends on Frank Harrrel’s Hmisc package which can be installed from the R package repository (CRAN) by:
+  
+install.packages("Hmisc")
+library(Hmisc)
+
+
+# setwd("C:/Users/shahu/OneDrive - The University of Melbourne/Documents/Downloads")
+
+# install.packages("ADNIMERGE_0.0.1.tar", repos = NULL, type = "source")
+
+
+library(ADNIMERGE)
+
+# Checking out the different data files
+# View(adnimerge) 
+
+## Modified Code originally by Ben: 
+# install.packages("sjlabelled")
+library(sjlabelled)
+
+library(tidyverse)
+
+## clean viscode function 
+clean_viscode <- function(viscode) {
+  as.numeric(as.character(factor(viscode, levels = c("sc",
+        "bl", "m03", "m06", "m12", "m18", "m24", "m30", "m36",
+        "m42", "m48", "m54", "m60", "m66", "m72", "m78", "m84",
+        "m90", "m96", "m102", "m108", "m114", "m120", "m126",
+        "m132", "m144"), labels = c(-1, 0, 3, 6, 12, 18, 24,
+        30, 36, 42, 48, 54, 60, 66, 72, 78, 84, 90, 96, 102,
+        108, 114, 120, 126, 132, 144), ordered = F)))
+}
+
+
+# store required columns for data exploration
+adni_data <- adnimerge %>% mutate(DX = as.character(factor(DX, c("CN", "MCI", "Dementia"), c("CN", "MCI", "AD"))), DX.bl = as.character(factor(DX, c("CN", "MCI", "Dementia"), c("CN", "MCI", "AD"))), VISCODE = clean_viscode(VISCODE),
+        ) %>% 
+  sjlabelled::remove_all_labels() %>% 
+  select(RID, VISCODE, EXAMDATE, DX, AGE, 
+         PTEDUCAT, PTGENDER, APOE4, MMSE, 
+         mPACCtrailsB, DX.bl, MMSE.bl, mPACCtrailsB.bl) %>%
+  left_join(fhq %>% 
+              group_by(RID) %>%
+              summarise(
+               fam_hist_dad_dem = 1 * any(FHQDADAD == 'Yes', na.rm = T),
+               fam_hist_dad_ad = 1 * any(FHQDADAD == 'Yes', na.rm = T),
+               fam_hist_mum_dem = 1 * any(FHQDADAD == 'Yes', na.rm = T),
+               fam_hist_mum_ad = 1 * any(FHQMOMAD == 'Yes', na.rm = T)), by = 'RID') 
+
+
+# Create a duplicate for data manipulation: 
+adni1 <- adni_data
+
+# View(adni1)
+```
+
+## Data Exploration:
+
+-   Explore the dataset's structure, dimensions, and data types (e.g., numeric, categorical, time series) to get a general idea of what the data contains.
+
+```{r}
+
+## Display the first 5 lines 
+# head(AD1, 5)
+
+## dimensions 
+# dim(AD1) 
+## 16412 rows and 17 columns
+
+## all the variables, the data type of the variables
+# glimpse(AD1)
+
+## all the variables are numerical except DX which is a character. 
+
+## see the whole data_set
+# View(AD1)
+
+## column/variable names 
+# names(AD1)
+
+# all the possible unique values that exist for each column/variable
+length(unique(adni1$RID))
+# this means that there are 2431 individuals in our data set
+
+# filter is for rows
+# select is for columns
+# this can show us if there are NA = missing data, none = or unknown = which mean diff things
+# table (ColumnName)
+```
+
+### Check if we need to impute missing data
+
+The `gg_miss_var()` and `vis_miss()` functions come from the naniar package and can be used to provide a visual output of the missing data.
+
+```{r}
+gg_miss_var(adni1) # plots the amount of missing values in each column of our data frame
+vis_miss(adni1) # creates a heat-map showing where the missing N/a values in our columns are. This is a useful function to figure our where your data is in bigger data frames. 
+
+```
+
+We can see that there are a lot of missing (NA) values in the VISCODE, APOE4, family history etc
+
+The diagnosis seems to be missing if the MMSE or mPACCtrailsB scores are missing.
+
+## Data Cleaning:
+
+-   Identify and handle missing data appropriately. Impute or remove missing values based on the nature of the missingness and your research objectives.
+
+Understand the Missing Data Mechanism: Before selecting an imputation method, it's essential to understand the nature of missingness in your dataset. Missing data in longitudinal studies can occur due to various reasons, such as dropouts, missed follow-ups, or participant withdrawals. The missing data mechanism can be classified as Missing Completely at Random (MCAR), Missing at Random (MAR), or Missing Not at Random (MNAR). The choice of imputation method can be influenced by the missing data mechanism.
+
+Explore Multiple Imputation Methods: In order to account for individual variability in your longitudinal dataset you should consider imputations methods sutibale for each variable/feature as some might be time-dependent covariates.
+
+Popular imputation methods include: **see notes**
+
+Evaluate Imputation Quality: After imputation, assess the quality of imputed values by comparing them with observed data when available. Additionally, consider conducting sensitivity analyses to evaluate the robustness of your results to different imputation assumptions.
+
+-   Check for and handle any potential data entry errors, outliers, or inconsistent data values that could impact the analysis
+
+------------------------------------------------------------------------
+
+```{r}
+
+# There are not a lot of rows with missing values for the features VISCODE, APOE4 and DX (in correlation with MMSE and trailsB score) so i decided to leave them all out 
+# remove rows where VISCODE = NA, APOE4 = NA
+adni2 <- adni1 %>% drop_na(VISCODE, APOE4, DX, MMSE, mPACCtrailsB)
+# View(adni2)
+
+
+# It is not recommended to impute missing family datam so I decided to leave them out of adni2 for now. 
+# I am storing these excluded participants in adni_nofamhist for future reference. 
+adni_nofamhist <- subset(adni1, is.na(fam_hist_dad_dem) | is.na(fam_hist_dad_ad) | is.na(fam_hist_mum_dem)| is.na(fam_hist_mum_ad))
+# View the RIDs for the fam hist rows with NA values 
+# view(adni_nofamhist)
+
+# Remove rows of participants without any family history 
+adni3 <- adni2 %>% drop_na(fam_hist_dad_dem, fam_hist_dad_ad, fam_hist_mum_dem, fam_hist_mum_ad)
+# View(adni3)
+
+```
+
+I used the fill function to impute missing data for the DX.bl row based on the DX given to a person for their 1st visit
+
+```{r}
+# View the rows with missing DX.bl values in adni3
+missingdxrows <- subset(adni3, is.na(DX.bl))
+# View(missingdxrows)
+
+# Function to fill missing values in DX.bl column
+fill_missing_dxbl <- function(df) {
+  df <- df %>%
+    group_by(RID) %>%
+    arrange(VISCODE) %>%
+    slice_head(n = 1) %>%
+    mutate(DX.bl = ifelse(is.na(DX.bl), DX, DX.bl)) %>%
+    ungroup()
+  return(df)
+}
+
+# Applying the function to fill missing values
+missingdxrows <- fill_missing_dxbl(missingdxrows)
+# View(missingdxrows)
+
+# SKIPPED FOR NOW BECAUASE IT IS NOT REQUIRED IN TABLE01
+```
+
+Review the missing data:
+
+```{r}
+gg_miss_var(missingdxrows) # plots the amount of missing values in each column of our data frame
+vis_miss(missingdxrows) # creates a heat-map showing where the missing N/a values in our columns are. This is a useful function to figure our where your data is in bigger data frames. 
+```
+
+IGNORE THE missing values for the DX.bl for now as it is already captured in the DX column.
+
+## Data Description:
+
+-   Generate summary statistics and descriptive analyses to understand the distribution and central tendencies of variables. Identify key demographic characteristics of the study population, such as age, sex, and education level.
+
+### Table 01
+
+```{r}
+
+# prune the adni3 dataset to only have the columns we want in our table01
+adni4 <- adni3 %>% select(-DX.bl, -MMSE.bl, -mPACCtrailsB.bl, -EXAMDATE)
+# View(adni4)
+
+df <- adni4
+# Get time of AD event -- for each ID, arrange by time, pull out the rows with AD dx and take the first.
+progressors1 <- df %>% group_by(RID) %>% arrange(VISCODE) %>% filter(DX=="AD") %>% slice_head(n=1) %>% select(RID, VISCODE, DX, AGE, PTEDUCAT, PTGENDER, APOE4, MMSE, mPACCtrailsB, fam_hist_dad_dem, fam_hist_dad_ad, fam_hist_mum_dem, fam_hist_mum_ad)
+# view(progressors1)
+
+# remove all participants from the progressors group who had a AD diagnosis at Viscode = 0 
+progressors <- progressors1 %>% filter(VISCODE!=0)
+# view(progressors)
+
+# for non converters you can do similar but take the last visit
+non_progressors <- df %>% group_by(RID) %>% arrange(VISCODE) %>% filter(!any(DX=="AD")) %>% slice_tail(n=1) %>% select(RID, VISCODE, DX, AGE, PTEDUCAT, PTGENDER, APOE4, MMSE, mPACCtrailsB, fam_hist_dad_dem, fam_hist_dad_ad, fam_hist_mum_dem, fam_hist_mum_ad)
+# view(non_progressors)
+
+surv_df <- rbind(progressors, non_progressors) %>% mutate(event=as.numeric(DX=="AD"))
+View(surv_df)
+
+
+count_tablev6 <- surv_df %>%
+  group_by(event) %>%
+  summarise(Count = n())
+View(count_tablev6)
+
+sum(count_tablev6$Count)
+
+
+## TABLE 01
+# Create a variable list which we want in Table 1
+listVars <- c("AGE", "PTEDUCAT", "PTGENDER", "APOE4", "MMSE", "mPACCtrailsB", "fam_hist_dad_dem", "fam_hist_dad_ad", "fam_hist_mum_dem", "fam_hist_mum_ad")
+ 
+# Define categorical variables
+# catVars <- c("DX","PTGENDER")
+catVars <- c("PTGENDER")
+
+table1 <- CreateTableOne(vars = listVars, data = surv_df, factorVars = catVars, strata = c("event"))
+print(table1)
+```
+
+### PLOT KM-Curve
+
+```{r}
+
+# Convert VISCODE to a factor for survival analysis
+surv_df$VISCODE <- as.factor(surv_df$VISCODE)
+
+# Define a survival object
+surv_obj <- Surv(time = as.numeric(surv_df$VISCODE), event = surv_df$event)
+
+# Fit Kaplan-Meier survival curves
+km_fit <- survfit(surv_obj ~ event, data = surv_df)
+
+# Plot Kaplan-Meier curves
+ggsurv <- ggsurvplot(km_fit,
+                     data = surv_df,
+                     palette = c("darkorchid1", "darkorange1"), # Set color palette
+                     pval = TRUE,  # Display p-values
+                     conf.int = TRUE,  # Display confidence intervals
+                     risk.table = TRUE,  # Display risk table
+                     risk.table.col = "Group",  # Color risk table by group
+                     legend.title = "Group",  # Set legend title
+                     legend.labs = c("Controls", "Cases"),  # Set legend labels,
+                     ggtheme = theme_minimal(),  # Set plot theme
+
+           )
+
+# Add title to the plot
+ggsurv$plot <- ggsurv$plot + ggtitle("Kaplan-Meier Survival Curves")
+
+# Adjust legend position
+ggsurv$plot <- ggsurv$plot + theme(legend.position = "right")
+
+print(ggsurv$plot)
+```
+
+#### GENDER
+
+```{r}
+
+# Convert VISCODE to a factor for survival analysis
+surv_df$VISCODE <- as.factor(surv_df$VISCODE)
+
+# Fit Kaplan-Meier survival curve for each gender
+km_gen <- survfit(Surv(time = as.numeric(VISCODE), event=event)~PTGENDER, data=surv_df)
+
+km_gen
+
+# Plot Kaplan-Meier curves
+ggsurv <- ggsurvplot(km_gen,
+                     data = surv_df,
+                     pval = TRUE,  # Display p-values
+                     conf.int = TRUE,  # Display confidence intervals
+                     risk.table = TRUE,  # Display risk table
+           risk.table.col = "strata",  # Color risk table by group
+           ggtheme = theme_minimal(),  # Set plot theme
+           palette = c("red", "blue"),  # Set color palette
+           legend.title = "Gender",  # Set legend title
+           legend.labs = c("Female", "Male")  # Set legend labels,
+           )
+
+# Add title to the plot
+ggsurv$plot <- ggsurv$plot + ggtitle("Kaplan-Meier Survival Curve - Gender")
+
+# Adjust legend position
+ggsurv$plot <- ggsurv$plot + theme(legend.position = "right")
+
+print(ggsurv$plot)
+```
+
+##### The important question is that are the two survival functions significantly different? you can use a log rank test to get a numeric value to this instead of just checking visually.
+
+```{r}
+
+# Do the LOG-RANK-TEST
+# Ho: survival in two groups is the same
+# Ha: survival is not the same in both groups
+survdiff(Surv(time = as.numeric(VISCODE), event=event)~PTGENDER, data=surv_df)
+
+# p=0.1 which is not less than 0.05 so we can't reject the null hypothesis. We cannot say that the survival for males and females is different!
+
+```
+
+#### APOE
+
+```{r}
+# Convert VISCODE to a factor for survival analysis
+surv_df$VISCODE <- as.factor(surv_df$VISCODE)
+
+# Fit Kaplan-Meier survival curve for each gender
+km_gen <- survfit(Surv(time = as.numeric(VISCODE), event=event)~APOE4, data=surv_df)
+
+km_gen
+
+# Plot Kaplan-Meier curves
+ggsurv <- ggsurvplot(km_gen,
+                     data = surv_df,
+                     pval = TRUE,  # Display p-values
+                     conf.int = TRUE,  # Display confidence intervals
+                     risk.table = TRUE,  # Display risk table
+           risk.table.col = "strata",  # Color risk table by group
+           ggtheme = theme_minimal(),  # Set plot theme
+           palette = c("darksalmon", "darkviolet", "deeppink1"),  # Set color palette
+           legend.title = "APOE4",  # Set legend title
+           legend.labs = c("0", "1", "2")  # Set legend labels,
+           )
+
+# Add title to the plot
+ggsurv$plot <- ggsurv$plot + ggtitle("Kaplan-Meier Survival Curve - APOE4")
+
+# Adjust legend position
+ggsurv$plot <- ggsurv$plot + theme(legend.position = "right")
+
+print(ggsurv$plot)
+```
+
+##### Log Rank test for APOE!?
+
+#### DAD Dem
+
+```{r}
+
+# Convert VISCODE to a factor for survival analysis
+surv_df$VISCODE <- as.factor(surv_df$VISCODE)
+
+# Fit Kaplan-Meier survival curve for each gender
+km_daddem <- survfit(Surv(time = as.numeric(VISCODE), event=event) ~fam_hist_dad_dem, data=surv_df)
+
+km_daddem
+
+# Plot Kaplan-Meier curves
+ggsurv <- ggsurvplot(km_daddem,
+                     data = surv_df,
+                     pval = TRUE,  # Display p-values
+                     conf.int = TRUE,  # Display confidence intervals
+                     risk.table = TRUE,  # Display risk table
+           risk.table.col = "strata",  # Color risk table by group
+           ggtheme = theme_minimal(),  # Set plot theme
+           palette = c("cyan", "cornflowerblue"),  # Set color palette
+           legend.title = "Dad Dementia",  # Set legend title
+           legend.labs = c("0", "1")  # Set legend labels,
+           )
+
+# Add title to the plot
+ggsurv$plot <- ggsurv$plot + ggtitle("Kaplan-Meier Survival Curve - Dad Dem")
+
+# Adjust legend position
+ggsurv$plot <- ggsurv$plot + theme(legend.position = "right")
+
+print(ggsurv$plot)
+```
+
+#### DAD AD
+
+```{r}
+
+# Convert VISCODE to a factor for survival analysis
+surv_df$VISCODE <- as.factor(surv_df$VISCODE)
+
+# Fit Kaplan-Meier survival curve for each gender
+km_dad_ad <- survfit(Surv(time = as.numeric(VISCODE), event=event)~fam_hist_dad_ad, data=surv_df)
+
+km_dad_ad
+
+# Plot Kaplan-Meier curves
+ggsurv <- ggsurvplot(km_dad_ad,
+                     data = surv_df,
+                     pval = TRUE,  # Display p-values
+                     conf.int = TRUE,  # Display confidence intervals
+                     risk.table = TRUE,  # Display risk table
+           risk.table.col = "strata",  # Color risk table by group
+           ggtheme = theme_minimal(),  # Set plot theme
+           palette = c("cyan", "cornflowerblue"),  # Set color palette
+           legend.title = "Dad AD",  # Set legend title
+           legend.labs = c("0", "1")  # Set legend labels,
+           )
+
+# Add title to the plot
+ggsurv$plot <- ggsurv$plot + ggtitle("Kaplan-Meier Survival Curve - Dad AD")
+
+# Adjust legend position
+ggsurv$plot <- ggsurv$plot + theme(legend.position = "right")
+
+print(ggsurv$plot)
+
+```
+
+#### MUM Dem
+
+```{r}
+# Convert VISCODE to a factor for survival analysis
+surv_df$VISCODE <- as.factor(surv_df$VISCODE)
+
+# Fit Kaplan-Meier survival curve for each gender
+km_mumdem <- survfit(Surv(time = as.numeric(VISCODE), event=event) ~ fam_hist_mum_dem, data=surv_df)
+
+km_mumdem
+
+# Plot Kaplan-Meier curves
+ggsurv <- ggsurvplot(km_mumdem,
+                     data = surv_df,
+                     pval = TRUE,  # Display p-values
+                     conf.int = TRUE,  # Display confidence intervals
+                     risk.table = TRUE,  # Display risk table
+           risk.table.col = "strata",  # Color risk table by group
+           ggtheme = theme_minimal(),  # Set plot theme
+           palette = c("cyan", "cornflowerblue"),  # Set color palette
+           legend.title = "Mum Dementia",  # Set legend title
+           legend.labs = c("0", "1")  # Set legend labels,
+           )
+
+# Add title to the plot
+ggsurv$plot <- ggsurv$plot + ggtitle("Kaplan-Meier Survival Curve - Mum Dem")
+
+# Adjust legend position
+ggsurv$plot <- ggsurv$plot + theme(legend.position = "right")
+
+print(ggsurv$plot)
+```
+
+#### **MUM AD**
+
+```{r}
+# Convert VISCODE to a factor for survival analysis
+surv_df$VISCODE <- as.factor(surv_df$VISCODE)
+
+# Fit Kaplan-Meier survival curve for each gender
+km_mum_ad <- survfit(Surv(time = as.numeric(VISCODE), event=event)~fam_hist_mum_ad, data=surv_df)
+
+km_mum_ad
+
+# Plot Kaplan-Meier curves
+ggsurv <- ggsurvplot(km_mum_ad,
+                     data = surv_df,
+                     pval = TRUE,  # Display p-values
+                     conf.int = TRUE,  # Display confidence intervals
+                     risk.table = TRUE,  # Display risk table
+           risk.table.col = "strata",  # Color risk table by group
+           ggtheme = theme_minimal(),  # Set plot theme
+           palette = c("cyan", "cornflowerblue"),  # Set color palette
+           legend.title = "Mum AD",  # Set legend title
+           legend.labs = c("0", "1")  # Set legend labels,
+           )
+
+# Add title to the plot
+ggsurv$plot <- ggsurv$plot + ggtitle("Kaplan-Meier Survival Curve - Mum AD")
+
+# Adjust legend position
+ggsurv$plot <- ggsurv$plot + theme(legend.position = "right")
+
+print(ggsurv$plot)
+```
+
+## Continuous Variables:
+
+#### MMSE
+
+-   mild Alzheimer's disease: MMSE 21--26,
+
+-   moderate Alzheimer's disease: MMSE 10--20,
+
+-   moderately severe Alzheimer's disease: MMSE 10--14,
+
+-   severe Alzheimer's disease: MMSE less than 10.
+
+    ```{r}
+    # Define function to categorize MMSE scores
+    categorize_MMSE <- function(score) {
+      ifelse(score > 26, "Normal",
+             ifelse(score >= 21, "Mild",
+                    ifelse(score >= 15, "Moderate",
+                           ifelse(score >= 10, "Moderately Severe",
+                                  ifelse(score < 10, "Severe", NA)))))
+    }
+
+    # Apply the function to create a new column
+    surv_df$MMSE_group <- categorize_MMSE(surv_df$MMSE)
+
+    # Convert the new column to a factor
+    surv_df$MMSE_group <- factor(surv_df$MMSE_group, levels = c("Normal", "Mild", "Moderate", "Moderately Severe", "Severe"))
+
+    # Fit Kaplan-Meier survival curve for each MMSE group
+    km_MMSE <- survfit(Surv(time = as.numeric(VISCODE), event = event) ~ MMSE_group, data = surv_df)
+
+    # Plot Kaplan-Meier curves
+    ggsurv_MMSE <- ggsurvplot(km_MMSE,
+                              data = surv_df,
+                              pval = TRUE,
+                              conf.int = TRUE,
+                              risk.table = TRUE,
+                              risk.table.col = "MMSE_group",
+                              ggtheme = theme_minimal(),
+                              palette = c("green", "cyan", "cornflowerblue", "orange", "red"),
+                              legend.title = "MMSE Group",
+                              legend.labs = c("Normal", "Mild", "Moderate", "Moderately Severe", "Severe"))
+
+    # Add title to the plot
+    ggsurv_MMSE$plot <- ggsurv_MMSE$plot + ggtitle("Kaplan-Meier Survival Curve - MMSE Group")
+
+    # Adjust legend position
+    ggsurv_MMSE$plot <- ggsurv_MMSE$plot + theme(legend.position = "right")
+
+    print(ggsurv_MMSE$plot)
+
+
+    ```
+
+#### mPACCtrailsb
+
+-   The MPACCbtrails is normalised/average score of 4 different tests (MMSE, ..)
+
+-   I'm not sure how to do - what is the grouping definition like the one for MMSE.
+
+```{r}
+
+# Calculate quantiles to divide the data into 3 equal groups
+quantiles <- quantile(surv_df$mPACCtrailsB, probs = c(0, 1/3, 2/3, 1))
+
+# Define function to categorize education levels
+categorize_mPACC <- function(level) {
+  ifelse(level <= quantiles[2], "Low",
+         ifelse(level <= quantiles[3], "Medium", "High"))
+}
+
+# Apply the function to create a new column
+surv_df$mPACC_group <- categorize_mPACC(surv_df$mPACCtrailsB)
+
+# Convert the new column to a factor
+surv_df$mPACC_group <- factor(surv_df$mPACC_group, levels = c("Low", "Medium", "High"))
+
+# Fit Kaplan-Meier survival curve for each education group
+km_mPACC <- survfit(Surv(time = as.numeric(VISCODE), event = event) ~ mPACC_group, data = surv_df)
+
+# Plot Kaplan-Meier curves
+ggsurv_education <- ggsurvplot(km_mPACC,
+                               data = surv_df,
+                               pval = TRUE,
+                               conf.int = TRUE,
+                               risk.table = TRUE,
+                               risk.table.col = "mPACC_group",
+                               ggtheme = theme_minimal(),
+                               palette = c("orange", "blue", "green"),
+                               legend.title = "mPACCtrailsB Group",
+                               legend.labs = c("Low", "Medium", "High"))
+
+# Add title to the plot
+ggsurv_mPACC$plot <- ggsurv_mPACC$plot + ggtitle("Kaplan-Meier Survival Curve - mPACCtrailsB Group")
+
+# Adjust legend position
+ggsurv_mPACC$plot <- ggsurv_mPACC$plot + theme(legend.position = "right")
+
+print(ggsurv_mPACC$plot)
+
+```
+
+#### AGE
+
+-   split into two groups - over and under 60
+
+    ```{r}
+
+    # Convert VISCODE to a factor for survival analysis
+    surv_df$VISCODE <- as.factor(surv_df$VISCODE)
+
+    # split into two groups - over and under 60
+    surv_df$strata <- ifelse(surv_df$AGE >= 60, "over60", "under60") 
+    View(surv_df)
+
+
+    # Fit Kaplan-Meier survival curve for each gender
+    km_age <- survfit(Surv(time = as.numeric(VISCODE), event=event)~strata, data=surv_df)
+
+    km_age
+
+
+    # Plot Kaplan-Meier curves
+    ggsurv <- ggsurvplot(km_age,
+                         data = surv_df,
+                         pval = TRUE,  # Display p-values
+                         conf.int = TRUE,  # Display confidence intervals
+                         risk.table = TRUE,  # Display risk table
+               risk.table.col = "strata",  # Color risk table by group
+               ggtheme = theme_minimal(),  # Set plot theme
+               palette = c("cyan", "cornflowerblue"),  # Set color palette
+               legend.title = "Age Group",  # Set legend title
+               legend.labs = c("over60", "under60")  # Set legend labels,
+               )
+
+    # Add title to the plot
+    ggsurv$plot <- ggsurv$plot + ggtitle("Kaplan-Meier Survival Curve - Age Group")
+
+    # Adjust legend position
+    ggsurv$plot <- ggsurv$plot + theme(legend.position = "right")
+
+    print(ggsurv$plot)
+    ```
+
+#### EDUCATION
+
+-   group stratergy - split into 3 equal groups
+
+```{r}
+
+# Calculate quantiles to divide the data into 3 equal groups
+quantiles <- quantile(surv_df$PTEDUCAT, probs = c(0, 1/3, 2/3, 1))
+
+# Define function to categorize education levels
+categorize_education <- function(level) {
+  ifelse(level <= quantiles[2], "Low",
+         ifelse(level <= quantiles[3], "Medium", "High"))
+}
+
+# Apply the function to create a new column
+surv_df$education_group <- categorize_education(surv_df$PTEDUCAT)
+
+# Convert the new column to a factor
+surv_df$education_group <- factor(surv_df$education_group, levels = c("Low", "Medium", "High"))
+
+# Fit Kaplan-Meier survival curve for each education group
+km_education <- survfit(Surv(time = as.numeric(VISCODE), event = event) ~ education_group, data = surv_df)
+
+# Plot Kaplan-Meier curves
+ggsurv_education <- ggsurvplot(km_education,
+                               data = surv_df,
+                               pval = TRUE,
+                               conf.int = TRUE,
+                               risk.table = TRUE,
+                               risk.table.col = "education_group",
+                               ggtheme = theme_minimal(),
+                               palette = c("orange", "blue", "green"),
+                               legend.title = "Education Group",
+                               legend.labs = c("Low", "Medium", "High"))
+
+# Add title to the plot
+ggsurv_education$plot <- ggsurv_education$plot + ggtitle("Kaplan-Meier Survival Curve - Education Group")
+
+# Adjust legend position
+ggsurv_education$plot <- ggsurv_education$plot + theme(legend.position = "right")
+
+print(ggsurv_education$plot)
+
+
+```
+
+## 
