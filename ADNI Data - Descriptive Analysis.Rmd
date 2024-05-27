@@ -263,20 +263,20 @@ IGNORE THE missing values for the DX.bl for now as it is already captured in the
 
 # prune the adni3 dataset to only have the columns we want in our table01
 adni4 <- adni3 %>% select(-DX.bl, -MMSE.bl, -mPACCtrailsB.bl, -EXAMDATE)
-# View(adni4)
+View(adni4)
 
 df <- adni4
 # Get time of AD event -- for each ID, arrange by time, pull out the rows with AD dx and take the first.
 progressors1 <- df %>% group_by(RID) %>% arrange(VISCODE) %>% filter(DX=="AD") %>% slice_head(n=1) %>% select(RID, VISCODE, DX, AGE, PTEDUCAT, PTGENDER, APOE4, MMSE, mPACCtrailsB, fam_hist_dad_dem, fam_hist_dad_ad, fam_hist_mum_dem, fam_hist_mum_ad)
-# view(progressors1)
+view(progressors1)
 
 # remove all participants from the progressors group who had a AD diagnosis at Viscode = 0 
 progressors <- progressors1 %>% filter(VISCODE!=0)
-# view(progressors)
+view(progressors)
 
 # for non converters you can do similar but take the last visit
 non_progressors <- df %>% group_by(RID) %>% arrange(VISCODE) %>% filter(!any(DX=="AD")) %>% slice_tail(n=1) %>% select(RID, VISCODE, DX, AGE, PTEDUCAT, PTGENDER, APOE4, MMSE, mPACCtrailsB, fam_hist_dad_dem, fam_hist_dad_ad, fam_hist_mum_dem, fam_hist_mum_ad)
-# view(non_progressors)
+view(non_progressors)
 
 surv_df <- rbind(progressors, non_progressors) %>% mutate(event=as.numeric(DX=="AD"))
 View(surv_df)

@@ -79,9 +79,9 @@ test_data <- testing(data_split)
 # Define recipe
 surv_recipe <- recipe(event ~ AGE + APOE4 , data = train_data)
 
-surv_recipe1 <- recipe(event ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad + PTGENDER, data = train_data)
+surv_recipe1 <- recipe(event ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad + PTGENDER, data = train_data) # Factor gender
 
-surv_recipe2 <- recipe(event ~ mPACC_group + MMSE_group + education_group, data = train_data)
+surv_recipe2 <- recipe(event ~ mPACCtrailsb + MMSE + PTEDUCAT, data = train_data)
 
 # K-fold cross validation
 cv_folds <- vfold_cv(train_data, v=5, repeats=3)
@@ -298,7 +298,7 @@ final_res %>%
 
 # Import preprocessed data 
 surv_df <- read.csv("preprocessed_data.csv") #survival_dataframe 
-# View(surv_df)
+View(surv_df)
 
 # Set seed for reproducibility
 set.seed(123)
@@ -316,9 +316,9 @@ test_data <- testing(data_split)
 # Define recipe
 surv_recipe <- recipe(event ~ AGE + APOE4 , data = train_data)
 
-surv_recipe1 <- recipe(event ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad + PTGENDER, data = train_data)
+surv_recipe1 <- recipe(event ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad + PTGENDER, data = train_data) # Factor gender
 
-surv_recipe2 <- recipe(event ~ mPACC_group + MMSE_group + education_group, data = train_data)
+surv_recipe2 <- recipe(event ~ mPACCtrailsb + MMSE + PTEDUCAT, data = train_data)
 
 # K-fold cross validation
 cv_folds <- vfold_cv(train_data, v=5, repeats=3)
