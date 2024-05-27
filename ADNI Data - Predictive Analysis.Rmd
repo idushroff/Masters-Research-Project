@@ -1,0 +1,506 @@
+---
+title: "ADNI Data - Predictive Analysis"
+output: html_document
+date: "2023-03-29"
+---
+
+# ADNI Data - Predictive Analysis
+
+## Install and load the relevant packages
+
+```{r}
+# install.packages("tidyverse")
+library(tidyverse)
+
+# install.packages("naniar")
+library(naniar)
+
+# install.packages("parsnip")
+
+# Load required libraries
+library(readr)
+library(dplyr)
+library(rsample)
+library(recipes)
+library(parsnip)
+library(workflows)
+# install.packages(caret)
+library(caret)
+# install.packages(yardstick)
+library(yardstick)
+
+# install.packages("remotes")
+# remotes::install_github("kaz-yos/tableone")
+library(tableone)
+
+# install.packages("survival")
+library(survival)
+
+# install.packages("survminer")
+library(survminer) # For creating more advanced and visually appealing survival analysis plots. 
+
+
+# install.packages("Hmisc")
+library(Hmisc)
+
+# install.packages("sjlabelled")
+library(sjlabelled)
+
+library(tidymodels)
+library(modeldata)
+
+# install.packages("ranger")
+library(ranger)
+```
+
+## Building and Evaluating Predictive Models using the Tidymodels
+
+# surv_recipe - NO TUNING
+
+```{r}
+
+# Import preprocessed data 
+surv_df <- read.csv("preprocessed_data.csv") #survival_dataframe 
+View(surv_df)
+
+# Set seed for reproducibility
+set.seed(123)
+
+# Convert the event column to a factor - I got an error so left the event column as a numeric instead of a factor
+surv_df$event <- factor(surv_df$event, levels = c(0, 1), labels = c("No AD", "AD"))
+# View(surv_df)
+# Split the data into training and testing sets
+
+data_split <- initial_split(surv_df, prop = 3/4, strata = event)
+train_data <- training(data_split)
+# View(train_data)
+test_data <- testing(data_split)
+
+# Define recipe
+surv_recipe <- recipe(event ~ AGE + APOE4 , data = train_data)
+
+surv_recipe1 <- recipe(event ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad + PTGENDER, data = train_data)
+
+surv_recipe2 <- recipe(event ~ mPACC_group + MMSE_group + education_group, data = train_data)
+
+# K-fold cross validation
+cv_folds <- vfold_cv(train_data, v=5, repeats=3)
+
+# Define the models
+glm_model <- logistic_reg() %>% 
+  set_engine("glm") %>% 
+  set_mode("classification")
+
+rf_model <- rand_forest() %>% 
+  set_engine("ranger") %>% 
+  set_mode("classification")
+
+gbm_model <- boost_tree() %>% 
+  set_engine("xgboost", objective = "binary:logistic") %>% 
+  set_mode("classification")
+
+############################################################
+# Fit resamples
+logistic_res <- fit_resamples(glm_model, surv_recipe, cv_folds)
+randomForest_res <- fit_resamples(rf_model, surv_recipe, cv_folds)
+XGBoost_res <- fit_resamples(gbm_model, surv_recipe, cv_folds)
+
+# Create a tibble of model results
+model_res <- tibble(model=list(logistic_res, randomForest_res, XGBoost_res),
+       model_name = c("logistic", "randomforest", "XGBoost"))
+
+# create a helper function for collecting the metrics
+map_collect_metrics <- function(model){model %>% 
+    select(id, .metrics) %>% 
+    unnest(.metrics) 
+}
+
+
+# Apply helper function and extract the metrics
+model_res <- model_res %>% 
+  mutate(res=map(model, map_collect_metrics)) %>% 
+  select(model_name, res) %>% 
+  unnest(res)
+
+model_res
+
+plot <- model_res %>% 
+  ggplot(aes(x=model_name, y= .estimate)) +
+  geom_boxplot() + 
+  facet_wrap(~ .metric, scales="free_y")
+
+plot
+########################### MODEL EVALUATION ###########################
+# Show the accuracy for each fold for each model:
+accuracy <- model_res %>% 
+  filter(.metric == "accuracy") %>% 
+  select(model_name, id, .estimate) %>% 
+  pivot_wider(names_from = "model_name", values_from = ".estimate")
+
+accuracy
+
+# Show the roc_auc for each fold for each model:
+roc_acu <- model_res %>% 
+  filter(.metric == "roc_auc") %>% 
+  select(model_name, id, .estimate) %>% 
+  pivot_wider(names_from = "model_name", values_from = ".estimate")
+
+roc_acu
+
+# Visulaize the above:
+plot1 <- model_res %>% 
+  ggplot(aes(x=model_name, y= .estimate, color = id, group = id)) +
+  geom_line() + 
+  facet_wrap(~.metric, scales="free_y")
+
+plot1
+
+# We can see that there is not a lot of variability in the different folds. However there is quite a lot of variability between the models themselves.
+
+# What is the density of the 3 models:
+density_plot <- model_res %>% 
+  ggplot(aes(x=.estimate, color = model_name, fill = model_name)) +
+  geom_density(alpha = 0.1) + 
+  facet_wrap(~.metric, scales="free")
+
+density_plot
+
+# What are the overall metrics for these three models.
+metrics <- model_res %>% 
+  group_by(model_name, .metric) %>% 
+  summarise(mean=mean(.estimate))
+
+metrics
+```
+
+# Surv_recipe - XGBOOST model tuning
+
+```{r}
+# Import preprocessed data 
+surv_df <- read.csv("preprocessed_data.csv") #survival_dataframe 
+# View(surv_df)
+
+# Set seed for reproducibility
+set.seed(123)
+
+# Convert the event column to a factor - I got an error so left the event column as a numeric instead of a factor
+surv_df$event <- factor(surv_df$event, levels = c(0, 1), labels = c("No AD", "AD"))
+# View(surv_df)
+# Split the data into training and testing sets
+
+data_split <- initial_split(surv_df, prop = 3/4, strata = event)
+train_data <- training(data_split)
+# View(train_data)
+test_data <- testing(data_split)
+
+# Define recipe
+surv_recipe <- recipe(event ~ AGE + APOE4 , data = train_data)
+
+
+# Define the models
+glm_model <- logistic_reg() %>% 
+  set_engine("glm") %>% 
+  set_mode("classification")
+
+rf_model <- rand_forest() %>% 
+  set_engine("ranger") %>% 
+  set_mode("classification")
+
+# change xgb_spec to gbm_model
+xgb_spec <- boost_tree(trees = 1000,
+                        tree_depth = tune(), 
+                        min_n = tune(), 
+                        loss_reduction = tune(),
+                        sample_size = tune(), 
+                        mtry = tune(), 
+                        learn_rate = tune()) %>% 
+  set_engine("xgboost", objective = "binary:logistic") %>% 
+  set_mode("classification")
+
+xgb_spec 
+
+xgb_grid <- grid_latin_hypercube(tree_depth(), 
+                                  min_n(),
+                                  loss_reduction(),
+                                  sample_size = sample_prop(),
+                                  finalize(mtry(), train_data),
+                                  learn_rate(),
+                                  size = 20)
+xgb_grid
+
+xgb_wf <- workflow() %>% add_recipe(surv_recipe) %>% add_model(xgb_spec)
+
+# K-fold cross validation
+cv_folds <- vfold_cv(train_data, v=5, repeats=3)
+
+doParallel::registerDoParallel()
+set.seed(234)
+xgb_res <- tune_grid(xgb_wf, 
+                     resamples = cv_folds, 
+                     grid = xgb_grid,
+                     control = control_grid(save_pred = TRUE))
+
+xgb_res
+# Explore the results
+collect_metrics(xgb_res)
+
+# We ca also use visualization to understand our results 
+xgb_res %>%
+  collect_metrics() %>%
+  filter(.metric == "roc_auc") %>%
+  select(mean, mtry:sample_size) %>%
+  pivot_longer(mtry:sample_size,
+               values_to = "value",
+               names_to = "parameter"
+  ) %>%
+  ggplot(aes(value, mean, color = parameter)) +
+  geom_point(alpha = 0.8, show.legend = FALSE) +
+  facet_wrap(~parameter, scales = "free_x") +
+  labs(x = NULL, y = "AUC")
+
+xgb_res
+
+show_best(xgb_res, "roc_auc")
+
+
+best_auc <- select_best(xgb_res, "roc_auc")
+best_auc
+
+final_xgb <- finalize_workflow(
+  xgb_wf,
+  best_auc
+)
+
+final_xgb
+
+
+final_res <- last_fit(final_xgb, vb_split)
+
+collect_metrics(final_res)
+
+
+final_res %>%
+  collect_predictions() %>%
+  roc_curve(win, .pred_win) %>%
+  ggplot(aes(x = 1 - specificity, y = sensitivity)) +
+  geom_line(size = 1.5, color = "midnightblue") +
+  geom_abline(
+    lty = 2, alpha = 0.5,
+    color = "gray50",
+    size = 1.2
+  )
+```
+
+# surv_recipe - Randomforest modeltuning
+
+```{r}
+
+
+# Import preprocessed data 
+surv_df <- read.csv("preprocessed_data.csv") #survival_dataframe 
+# View(surv_df)
+
+# Set seed for reproducibility
+set.seed(123)
+
+# Convert the event column to a factor - I got an error so left the event column as a numeric instead of a factor
+surv_df$event <- factor(surv_df$event, levels = c(0, 1), labels = c("No AD", "AD"))
+# View(surv_df)
+# Split the data into training and testing sets
+
+data_split <- initial_split(surv_df, prop = 3/4, strata = event)
+train_data <- training(data_split)
+# View(train_data)
+test_data <- testing(data_split)
+
+# Define recipe
+surv_recipe <- recipe(event ~ AGE + APOE4 , data = train_data)
+
+surv_recipe1 <- recipe(event ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad + PTGENDER, data = train_data)
+
+surv_recipe2 <- recipe(event ~ mPACC_group + MMSE_group + education_group, data = train_data)
+
+# K-fold cross validation
+cv_folds <- vfold_cv(train_data, v=5, repeats=3)
+
+# Define the Random forest model 
+rf_model <- rand_forest(mtry = tune(),
+  trees = 1000,
+  min_n = tune()) %>% 
+  set_engine("ranger") %>% 
+  set_mode("classification")
+
+rf_wf <- workflow() %>% add_recipe(surv_recipe) %>% add_model(rf_model)
+
+
+doParallel::registerDoParallel()
+set.seed(234)
+rf_grid <- tune_grid(rf_wf, 
+                     resamples = cv_folds, 
+                     control = control_grid(save_pred = TRUE))
+
+
+
+# Collect metrics
+rf_grid %>% collect_metrics()
+
+rf_grid %>% show_best("roc_auc")
+```
+
+# surv_recipe1
+
+# surv_recipe2
+
+# SURVIVAL ANALYSIS MODEL
+
+```{r}
+
+# To use code in this article, you will need to install the following packages: aorsf, censored, glmnet, modeldatatoo, and tidymodels.
+# Install and load the necessary packages
+install.packages("censored")
+library(censored)
+library(parsnip)
+library(tidymodels)
+
+# Import preprocessed data 
+surv_df <- read.csv("preprocessed_data.csv") #survival_dataframe 
+# View(surv_df)
+
+# In the dataset, we can see the time to event in the VISCODE column as well as the status of the participant. For a participant with the status "No AD". When the time to event for a participant with the status "No AD" is labeled as censored, it means that the event of interest (such as progression to Alzheimer's disease) did not occur within the observed time period. This could be due to various reasons; the study ending before the event could happen to that participant, or simply because the event has not yet occurred at the time of data collection. Censored data is important in survival analysis, where researchers are interested in understanding the time until an event of interest occurs, but not all participants experience the event during the study period.
+#DELETE THESE LINES OF CODE : 
+# surv_df1 <- surv_df %>% 
+#   mutate(diagnosis_surv = Surv(time = VISCODE, event == "AD")) %>%
+#   View()
+
+
+surv_df1 <- surv_df %>% 
+  mutate(diagnosis_surv  = Surv(VISCODE, event == "AD"), 
+    .keep = "unused")
+View(surv_df1)
+
+# For our resampling strategy, let’s use a 3-way split into training, validation, and test set.
+set.seed(403)
+
+data_split <- initial_validation_split(surv_df1)
+
+#----------------------------------
+# First, let’s pull out the training data and have a brief look at the response using a Kaplan-Meier curve.
+train_data <- training(data_split)
+survfit(diagnosis_surv ~ 1, data = train_data) %>% plot()
+# We can see that the majority of paticipants are not diagnosed with ad even after 140 viscodes.
+
+# ---------------------------A FIRST MODEL --------------------------# 
+# The censored package includes parametric, semi-parametric, and tree-based models for this type of analysis. To start, we are fitting a parametric survival model with the default of assuming a Weibull distribution on the time to disposition. We’ll explore the more flexible models once we have a sense of how well this more restrictive model performs on this dataset.
+
+survreg_spec <- survival_reg() %>% 
+  set_engine("survival") %>% 
+  set_mode("censored regression")
+
+rec_other <- recipe(diagnosis_surv ~ AGE + APOE4, data = train_data) 
+
+# We combine the recipe and the model into a workflow. This allows us to easily resample the model because all preprocessing steps are applied to the training set and the validation set for us.
+
+survreg_wflow <- workflow() %>% 
+  add_recipe(rec_other) %>% 
+  add_model(survreg_spec)
+
+# To fit and evaluate the model, we need the training and validation sets. While we can access them each on their own, validation_set() extracts them both, in a manner that emulates a single resample of the data. This enables us to use fit_resamples() and other tuning functions in the same way as if we had used some other resampling scheme (such as cross-validation).
+
+# We are calculating several performance metrics: the Brier score, its integrated version, the area under the ROC curve, and the concordance index. Note that all of these are used in a version tailored to survival analysis. The concordance index uses the predicted event time to measure the model’s ability to rank the observations correctly. The Brier score and the ROC curve use the predicted probability of survival at a given time. We evaluate these metrics every 30 days up to 300 days, as provided in the eval_time argument. The Brier score is a measure of the accuracy of the predicted probabilities, while the ROC curve is a measure of the model’s ability to discriminate between events and non-events at the given time point. Because these metrics are defined “at a given time,” they are also referred to as dynamic metrics.
+
+surv_rset <- validation_set(data_split)
+
+survival_metrics <- metric_set(brier_survival_integrated, brier_survival,
+                               roc_auc_survival, concordance_survival)
+evaluation_time_points <- seq(0, 300, 30)
+
+survreg_res <- fit_resamples(
+  survreg_wflow,
+  resamples = surv_rset,
+  metrics = survival_metrics,
+  eval_time = evaluation_time_points, 
+  control = control_resamples(save_pred = TRUE)
+)
+
+# The structure of survival model predictions is slightly different from classification and regression model predictions:
+
+
+preds <- collect_predictions(survreg_res)
+preds
+
+# The predicted survival time is in the .pred_time column and the predicted survival probabilities are in the .pred list column.
+preds$.pred[[6]]
+# For each observation, .pred contains a tibble with the evaluation time .eval_time and the corresponding survival probability .pred_survival. The column .weight_censored contains the weights used in the calculation of the dynamic performance metrics.
+
+
+
+# Of the metrics we calculated with these predictions, let’s take a look at the AUC ROC first.
+collect_metrics(survreg_res) %>% 
+  filter(.metric == "roc_auc_survival") %>% 
+  ggplot(aes(.eval_time, mean)) + 
+  geom_line() + 
+  labs(x = "Evaluation Time", y = "Area Under the ROC Curve")
+
+# The  Brier score is a measure of ..............
+collect_metrics(survreg_res) %>% 
+  filter(.metric == "brier_survival") %>% 
+  ggplot(aes(.eval_time, mean)) + 
+  geom_line() + 
+  labs(x = "Evaluation Time", y = "Brier Score")
+
+# The integrated Brier score is a measure of the overall accuracy of the predicted probabilities.
+
+collect_metrics(survreg_res) %>% 
+  filter(.metric == "brier_survival_integrated")
+
+# Which metric to optimise for depends on whether separation or calibration is more important in the modeling problem at hand. We’ll go with calibration here. Since we don’t have a particular evaluation time that we want to predict well at, we are going to use the integrated Brier score as our main performance metric.
+# 
+
+```
+
+# MAKING USE OF THE TIDY POSTERIOR PACKAGE TO COMPARE & CONTRAST MODEL PERFORMANCE:
+
+```{r}
+install.packages("devtools")
+devtools::install_github("mjskay/tidyposterior")
+
+library(tidyposterior)
+
+```
+
+```{r}
+model_pos <- model_res %>% 
+  filter(.metric == "roc_auc") %>% 
+  select(model_name, id, .estimate) %>% 
+  pivot_wider(names_from = "model_name", values_from = ".estimate")
+
+roc_auc_model <- perf_mod(model_pos, seed=42)
+```
+
+**Violin Plots of the Distribution**
+
+```{r}
+
+roc_auc_model %>% tidy() %>% ggplot(aes(x=model, y=statistic)) %>% geom_point()
+```
+
+How can we visually compare the models to see which model is superior?
+
+```{r}
+
+
+```
+
+**Random Forest:**
+
+1.  **n_estimators:** The number of trees in the forest. Increasing the number of trees can lead to better performance, but also increases computation time.
+
+2.  **max_depth:** The maximum depth of the tree. Deeper trees can capture more complex relationships in the data but may also lead to overfitting.
+
+**XGBoost:**
+
+1.  **learning_rate (eta):** The step size shrinkage used in update to prevent overfitting. Lower values make the model more robust but require more boosting rounds.
+
+2.  **max_depth:** The maximum depth of a tree. Deeper trees can capture more complex patterns but may lead to overfitting.
+
+These are some of the key parameters that can be tuned for Random Forest and XGBoost models to optimize performance for specific datasets and tasks. It's important to perform thorough experimentation and cross-validation to find the optimal combination of parameter values.
