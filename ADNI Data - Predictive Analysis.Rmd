@@ -9,97 +9,101 @@ date: "2023-03-29"
 ## Install and load the relevant packages
 
 ```{r}
-# install.packages("tidyverse")
-library(tidyverse)
 
+# Install and load the caret package, which provides a set of functions for training and plotting classification and regression models.
+install.packages("caret")
+library(caret)
+
+# Install and load the naniar package, which provides functions for exploring missing data patterns.
 # install.packages("naniar")
 library(naniar)
 
+# Install the parsnip package, for modeling. Useful because it provides a consistent interface to many different types of models.
 # install.packages("parsnip")
-
-# Load required libraries
-library(readr)
-library(dplyr)
-library(rsample)
-library(recipes)
 library(parsnip)
-library(workflows)
-# install.packages(caret)
-library(caret)
-# install.packages(yardstick)
+
+
+# Install and load the ranger package, which provides an efficient implementation of random forests.
+install.packages("ranger")
+library(ranger)
+
+# Install and load the tidyverse package, which is a collection of packages for data manipulation and visualization.
+
+# install.packages("tidyverse")
+library(tidyverse)
+
+# readr: For reading CSV files
+# dplyr: For data manipulation
+# ggplot2:For plots and graphs
+# tidyr: For tidying and reshaping data into a tidy format.
+# purrr: For functional programming and working with lists and vectors.
+# tibble: For creating and working with modern data frames.
+# stringr: For string manipulation and text processing.
+# forcats: For working with categorical data and factors.
+# lubridate: For working with dates and times.
+# magrittr: For creating expressive pipelines using the pipe operator %>%.
+# rlang: For advanced manipulation and programming with R expressions.
+
+
+# Install and load the tidymodels package, which provides a framework for modeling and machine learning.
+install.packages("tidymodels")
+library(tidymodels)
+# library(rsample) # For resampling methods; data splitting and resampling methods, such as cross-validation and bootstrapping.
+# library(recipes) # For preprocessing and feature engineering tasks, such as data transformation and variable selection.
+# library(workflows) # Provides a framework for creating and managing modeling workflows, allowing you to define and execute a series of preprocessing, modeling, and evaluation steps in a coherent manner.
+
+
+# Install and load the yardstick package, which provides tools for evaluating models with tidy data principles.
+install.packages("yardstick")
 library(yardstick)
 
-# install.packages("remotes")
-# remotes::install_github("kaz-yos/tableone")
-library(tableone)
-
-# install.packages("survival")
-library(survival)
-
-# install.packages("survminer")
-library(survminer) # For creating more advanced and visually appealing survival analysis plots. 
-
-
-# install.packages("Hmisc")
-library(Hmisc)
-
-# install.packages("sjlabelled")
-library(sjlabelled)
-
-library(tidymodels)
-library(modeldata)
-
-# install.packages("ranger")
-library(ranger)
 ```
+
+library(modeldata) \# WHY DO I NEED THIS?
 
 ## Building and Evaluating Predictive Models using the Tidymodels
 
-# surv_recipe - NO TUNING
+# Surv_recipe - NO TUNING
 
 ```{r}
 
 # Import preprocessed data 
 surv_df <- read.csv("preprocessed_data.csv") #survival_dataframe 
-View(surv_df)
+
+# Convert the event column to a factor
+surv_df$event <- factor(surv_df$event, levels = c(0, 1), labels = c("No AD", "AD"))
+# View(surv_df)
 
 # Set seed for reproducibility
 set.seed(123)
 
-# Convert the event column to a factor - I got an error so left the event column as a numeric instead of a factor
-surv_df$event <- factor(surv_df$event, levels = c(0, 1), labels = c("No AD", "AD"))
-# View(surv_df)
 # Split the data into training and testing sets
-
 data_split <- initial_split(surv_df, prop = 3/4, strata = event)
-train_data <- training(data_split)
-# View(train_data)
-test_data <- testing(data_split)
+train_data <- training(data_split) # Training set (75% of the data)
+test_data <- testing(data_split) # Testing set (25% of the data)
 
-# Define recipe
+# Define a recipe for preprocessing the data, using 'AGE' and 'APOE4' to predict 'event'
 surv_recipe <- recipe(event ~ AGE + APOE4 , data = train_data)
 
-surv_recipe1 <- recipe(event ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad + PTGENDER, data = train_data) # Factor gender
 
-surv_recipe2 <- recipe(event ~ mPACCtrailsb + MMSE + PTEDUCAT, data = train_data)
-
-# K-fold cross validation
-cv_folds <- vfold_cv(train_data, v=5, repeats=3)
-
-# Define the models
+# Define a logistic regression model for classification
 glm_model <- logistic_reg() %>% 
   set_engine("glm") %>% 
   set_mode("classification")
 
+# Define a random forest model for classification
 rf_model <- rand_forest() %>% 
   set_engine("ranger") %>% 
   set_mode("classification")
 
+# Define a gradient boosting model for classification
 gbm_model <- boost_tree() %>% 
   set_engine("xgboost", objective = "binary:logistic") %>% 
   set_mode("classification")
 
-############################################################
+# Define 5-fold cross-validation with 3 repeats
+cv_folds <- vfold_cv(train_data, v=5, repeats=3)
+
 # Fit resamples
 logistic_res <- fit_resamples(glm_model, surv_recipe, cv_folds)
 randomForest_res <- fit_resamples(rf_model, surv_recipe, cv_folds)
@@ -109,12 +113,10 @@ XGBoost_res <- fit_resamples(gbm_model, surv_recipe, cv_folds)
 model_res <- tibble(model=list(logistic_res, randomForest_res, XGBoost_res),
        model_name = c("logistic", "randomforest", "XGBoost"))
 
-# create a helper function for collecting the metrics
+# Create a helper function for collecting the metrics
 map_collect_metrics <- function(model){model %>% 
     select(id, .metrics) %>% 
-    unnest(.metrics) 
-}
-
+    unnest(.metrics)}
 
 # Apply helper function and extract the metrics
 model_res <- model_res %>% 
@@ -122,15 +124,16 @@ model_res <- model_res %>%
   select(model_name, res) %>% 
   unnest(res)
 
-model_res
+model_res #Display the model results
 
+# Plot boxplots for each metric
 plot <- model_res %>% 
   ggplot(aes(x=model_name, y= .estimate)) +
   geom_boxplot() + 
   facet_wrap(~ .metric, scales="free_y")
 
 plot
-########################### MODEL EVALUATION ###########################
+
 # Show the accuracy for each fold for each model:
 accuracy <- model_res %>% 
   filter(.metric == "accuracy") %>% 
@@ -173,78 +176,84 @@ metrics <- model_res %>%
 metrics
 ```
 
-# Surv_recipe - XGBOOST model tuning
+# Surv_recipe - XGBOOST Model Tuning
 
 ```{r}
 # Import preprocessed data 
 surv_df <- read.csv("preprocessed_data.csv") #survival_dataframe 
-# View(surv_df)
+
+# Convert the event column to a factor
+surv_df$event <- factor(surv_df$event, levels = c(0, 1), labels = c("No AD", "AD"))
 
 # Set seed for reproducibility
 set.seed(123)
 
-# Convert the event column to a factor - I got an error so left the event column as a numeric instead of a factor
-surv_df$event <- factor(surv_df$event, levels = c(0, 1), labels = c("No AD", "AD"))
-# View(surv_df)
 # Split the data into training and testing sets
-
 data_split <- initial_split(surv_df, prop = 3/4, strata = event)
-train_data <- training(data_split)
-# View(train_data)
-test_data <- testing(data_split)
+train_data <- training(data_split) # Training set (75% of the data)
+test_data <- testing(data_split) # Testing set (25% of the data)
 
-# Define recipe
+# Define a recipe for preprocessing the data, using 'AGE' and 'APOE4' to predict 'event'
 surv_recipe <- recipe(event ~ AGE + APOE4 , data = train_data)
 
-
-# Define the models
+# Define a logistic regression model for classification
 glm_model <- logistic_reg() %>% 
   set_engine("glm") %>% 
   set_mode("classification")
 
+# Define a random forest model for classification
 rf_model <- rand_forest() %>% 
   set_engine("ranger") %>% 
   set_mode("classification")
 
-# change xgb_spec to gbm_model
+# Define an XGBoost model with hyperparameters set for tuning
 xgb_spec <- boost_tree(trees = 1000,
-                        tree_depth = tune(), 
-                        min_n = tune(), 
-                        loss_reduction = tune(),
-                        sample_size = tune(), 
-                        mtry = tune(), 
-                        learn_rate = tune()) %>% 
+                        tree_depth = tune(), #Maximum depth of the tree
+                        min_n = tune(), #Minimum no. of data points in a leaf node
+                        loss_reduction = tune(), #Minimum loss reduction (gamma)
+                        sample_size = tune(), #Subsample ratio of the training data
+                        mtry = tune(), #No. of features to consider at each split
+                        learn_rate = tune()) %>% #Learning rate (eta)
   set_engine("xgboost", objective = "binary:logistic") %>% 
   set_mode("classification")
 
 xgb_spec 
 
-xgb_grid <- grid_latin_hypercube(tree_depth(), 
-                                  min_n(),
-                                  loss_reduction(),
-                                  sample_size = sample_prop(),
+# Create a grid for hyperparameter tuning using a Latin hypercube design
+xgb_grid <- grid_latin_hypercube(tree_depth(), #Maximum depth of the tree
+                                  min_n(), #Min no. of data points in a leaf node
+                                  loss_reduction(), #Minimum loss reduction (gamma)
+                                  sample_size = sample_prop(), #Subsample ratio of the training
                                   finalize(mtry(), train_data),
                                   learn_rate(),
-                                  size = 20)
+                                  size = 20) #Generate a set of 20 combinations of these hyperparameters for the tuning process
 xgb_grid
 
+# Create a workflow combining the recipe and the XGBoost model
 xgb_wf <- workflow() %>% add_recipe(surv_recipe) %>% add_model(xgb_spec)
 
-# K-fold cross validation
+# Define 5-fold cross-validation with 3 repeats
 cv_folds <- vfold_cv(train_data, v=5, repeats=3)
 
+# Register parallel processing to speed up computation
 doParallel::registerDoParallel()
+
+# Set seed for reproducibility in tuning
 set.seed(234)
+
+# Tune the XGBoost model using cross-validation folds and the grid of hyperparameters
 xgb_res <- tune_grid(xgb_wf, 
                      resamples = cv_folds, 
                      grid = xgb_grid,
                      control = control_grid(save_pred = TRUE))
 
+# Collect and print the cross-validation results
 xgb_res
+
 # Explore the results
 collect_metrics(xgb_res)
 
-# We ca also use visualization to understand our results 
+# Explore the results, focusing on the ROC AUC metric
 xgb_res %>%
   collect_metrics() %>%
   filter(.metric == "roc_auc") %>%
@@ -260,25 +269,24 @@ xgb_res %>%
 
 xgb_res
 
-show_best(xgb_res, "roc_auc")
+# Show the best results based on ROC AUC
+show_best(xgb_res, metric = "roc_auc")
 
-
+# Select the best hyperparameters based on ROC AUC
 best_auc <- select_best(xgb_res, "roc_auc")
 best_auc
 
-final_xgb <- finalize_workflow(
-  xgb_wf,
-  best_auc
-)
-
+# Finalize the workflow with the best hyperparameters
+final_xgb <- finalize_workflow(xgb_wf, best_auc)
 final_xgb
 
-
+# Fit the finalized model on the training set and evaluate it on the testing set
 final_res <- last_fit(final_xgb, vb_split)
 
+# Collect and print the evaluation metrics
 collect_metrics(final_res)
 
-
+# Plot the ROC curve for the final model's predictions
 final_res %>%
   collect_predictions() %>%
   roc_curve(win, .pred_win) %>%
@@ -291,34 +299,26 @@ final_res %>%
   )
 ```
 
-# surv_recipe - Randomforest modeltuning
+# Surv_recipe - Random Forest Model Tuning
 
 ```{r}
 
-
 # Import preprocessed data 
 surv_df <- read.csv("preprocessed_data.csv") #survival_dataframe 
-View(surv_df)
+
+# Convert the event column to a factor
+surv_df$event <- factor(surv_df$event, levels = c(0, 1), labels = c("No AD", "AD"))
 
 # Set seed for reproducibility
 set.seed(123)
 
-# Convert the event column to a factor - I got an error so left the event column as a numeric instead of a factor
-surv_df$event <- factor(surv_df$event, levels = c(0, 1), labels = c("No AD", "AD"))
-# View(surv_df)
 # Split the data into training and testing sets
-
 data_split <- initial_split(surv_df, prop = 3/4, strata = event)
-train_data <- training(data_split)
-# View(train_data)
-test_data <- testing(data_split)
+train_data <- training(data_split) # Training set (75% of the data)
+test_data <- testing(data_split) # Testing set (25% of the data)
 
-# Define recipe
+# Define a recipe for preprocessing the data, using 'AGE' and 'APOE4' to predict 'event'
 surv_recipe <- recipe(event ~ AGE + APOE4 , data = train_data)
-
-surv_recipe1 <- recipe(event ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad + PTGENDER, data = train_data) # Factor gender
-
-surv_recipe2 <- recipe(event ~ mPACCtrailsb + MMSE + PTEDUCAT, data = train_data)
 
 # K-fold cross validation
 cv_folds <- vfold_cv(train_data, v=5, repeats=3)
@@ -347,9 +347,32 @@ rf_grid %>% collect_metrics()
 rf_grid %>% show_best("roc_auc")
 ```
 
-# surv_recipe1
+# Trying all Recipies on Tuned Models
 
-# surv_recipe2
+```{r}
+
+
+# Import preprocessed data 
+surv_df <- read.csv("preprocessed_data.csv") #survival_dataframe 
+
+# Convert the event column to a factor
+surv_df$event <- factor(surv_df$event, levels = c(0, 1), labels = c("No AD", "AD"))
+
+# Set seed for reproducibility
+set.seed(123)
+
+# Split the data into training and testing sets
+data_split <- initial_split(surv_df, prop = 3/4, strata = event)
+train_data <- training(data_split) # Training set (75% of the data)
+test_data <- testing(data_split) # Testing set (25% of the data)
+
+# Define a recipe for preprocessing the data, using 'AGE' and 'APOE4' to predict 'event'
+surv_recipe <- recipe(event ~ AGE + APOE4 , data = train_data)
+
+surv_recipe1 <- recipe(event ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad + PTGENDER, data = train_data) # Factor gender
+
+surv_recipe2 <- recipe(event ~ mPACCtrailsb + MMSE + PTEDUCAT, data = train_data)
+```
 
 # SURVIVAL ANALYSIS MODEL
 

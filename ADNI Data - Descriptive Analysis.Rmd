@@ -8,10 +8,34 @@ date: "2023-03-29"
 
 ## Install and load the relevant packages
 
-### Install tidyverse for readr, dplyr, ggpolt2 and the other packages listed below
-
 ```{r}
-# install.packages("tidyverse")
+
+# Install and load the naniar package, which provides functions for exploring missing data patterns.
+install.packages("naniar")
+library(naniar)
+
+# Install the 'tableone' package for quickly understanding the distribution of variables as it allows for generating summary tables and statistics (means, medians, counts, and percentages) for comparing characteristics between different treatment/demographic groups or other categorical variables in a dataset. 
+install.packages("remotes")
+remotes::install_github("kaz-yos/tableone")
+library(tableone)
+
+
+# Install packages for plotting survival analysis curves
+install.packages("survival")
+library(survival)
+
+# Survminer provides functions for creating more advances and visually appealing survival analysis plots. 
+install.packages("survminer")
+library(survminer)
+
+
+# Install and load the sjlabelled package, which provides functions for working with labelled data.
+install.packages("sjlabelled")
+library(sjlabelled)
+
+# Install and load the tidyverse package, which is a collection of packages for data manipulation and visualization.
+
+install.packages("tidyverse")
 library(tidyverse)
 
 # readr: For reading CSV files
@@ -25,54 +49,7 @@ library(tidyverse)
 # lubridate: For working with dates and times.
 # magrittr: For creating expressive pipelines using the pipe operator %>%.
 # rlang: For advanced manipulation and programming with R expressions.
-```
 
-### Install the the naniar package:
-
--   It provides various functions and visualization tools to handle, explore, and understand missing data patterns in your datasets.
-
-```{r}
-# install.packages("naniar")
-library(naniar)
-```
-
-### Install the 'zoo' package
-
--   Missing Data Handling: The zoo package provides various methods for handling missing data in time series, including interpolation techniques like linear interpolation or using "last observation carried forward" (LOCF) method.
-
-```{r}
-
-# install.packages("zoo")
-library(zoo)
-```
-
-### Install the 'tableone' package
-
--   The "tableone" package is used for generating summary tables and statistics (means, medians, counts, and percentages) for comparing characteristics between different treatment/demographic groups or other categorical variables in a dataset. It's particularly useful in the context of medical and epidemiological research, where you often want to compare baseline characteristics of different treatment groups or populations.
-
-The table can help quickly understand the distribution of variables (continuous, categorical, and time-to-event variables.) across different groups.
-
-```{r}
-# install.packages("tableone")
-library(tableone)
-
-# install.packages("remotes")
-# remotes::install_github("kaz-yos/tableone")
-library(tableone)
-
-```
-
-### Install packages for plotting survival analysis curves
-
-### Install packages for plotting survival analysis curves?
-
-```{r}
-# install.packages("survival")
-library(survival)
-
-# Survminer provides functions for creating more advances and visually appealing survival analysis plots. 
-# install.packages("survminer")
-library(survminer)
 ```
 
 ## Load, Manipulate & Clean the dataset for analysis (Re-name the columns as required).
@@ -94,13 +71,7 @@ library(ADNIMERGE)
 
 # Checking out the different data files
 # View(adnimerge) 
-
-## Modified Code originally by Ben: 
-# install.packages("sjlabelled")
-library(sjlabelled)
-
-library(tidyverse)
-
+``
 ## clean viscode function 
 clean_viscode <- function(viscode) {
   as.numeric(as.character(factor(viscode, levels = c("sc",
@@ -300,6 +271,9 @@ catVars <- c("PTGENDER")
 
 table1 <- CreateTableOne(vars = listVars, data = surv_df, factorVars = catVars, strata = c("event"))
 print(table1)
+
+# Render the data frame as a nicely formatted table using kable
+kable(table_df, format = "html", caption = "Summary Table")
 ```
 
 ### PLOT KM-Curve
