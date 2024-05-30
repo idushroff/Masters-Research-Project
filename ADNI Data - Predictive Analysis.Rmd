@@ -27,8 +27,14 @@ library(parsnip)
 install.packages("ranger")
 library(ranger)
 
-# Install and load the tidyverse package, which is a collection of packages for data manipulation and visualization.
+# Install and load the tidymodels package, which provides a framework for modeling and machine learning.
+install.packages("tidymodels")
+library(tidymodels)
+# library(rsample) # For resampling methods; data splitting and resampling methods, such as cross-validation and bootstrapping.
+# library(recipes) # For preprocessing and feature engineering tasks, such as data transformation and variable selection.
+# library(workflows) # Provides a framework for creating and managing modeling workflows, allowing you to define and execute a series of preprocessing, modeling, and evaluation steps in a coherent manner.
 
+# Install and load the tidyverse package, which is a collection of packages for data manipulation and visualization.
 # install.packages("tidyverse")
 library(tidyverse)
 
@@ -43,15 +49,6 @@ library(tidyverse)
 # lubridate: For working with dates and times.
 # magrittr: For creating expressive pipelines using the pipe operator %>%.
 # rlang: For advanced manipulation and programming with R expressions.
-
-
-# Install and load the tidymodels package, which provides a framework for modeling and machine learning.
-install.packages("tidymodels")
-library(tidymodels)
-# library(rsample) # For resampling methods; data splitting and resampling methods, such as cross-validation and bootstrapping.
-# library(recipes) # For preprocessing and feature engineering tasks, such as data transformation and variable selection.
-# library(workflows) # Provides a framework for creating and managing modeling workflows, allowing you to define and execute a series of preprocessing, modeling, and evaluation steps in a coherent manner.
-
 
 # Install and load the yardstick package, which provides tools for evaluating models with tidy data principles.
 install.packages("yardstick")
@@ -91,7 +88,7 @@ glm_model <- logistic_reg() %>%
   set_engine("glm") %>% 
   set_mode("classification")
 
-# Define a random forest model for classification
+# Define the Random forest model with hyperparameters set for tuning, settting engine to 'ranger' provides a fast implementation of random forests for this classification task & Set mode to 'classification' for binary outcomes
 rf_model <- rand_forest() %>% 
   set_engine("ranger") %>% 
   set_mode("classification")
@@ -196,18 +193,9 @@ test_data <- testing(data_split) # Testing set (25% of the data)
 # Define a recipe for preprocessing the data, using 'AGE' and 'APOE4' to predict 'event'
 surv_recipe <- recipe(event ~ AGE + APOE4 , data = train_data)
 
-# Define a logistic regression model for classification
-glm_model <- logistic_reg() %>% 
-  set_engine("glm") %>% 
-  set_mode("classification")
-
-# Define a random forest model for classification
-rf_model <- rand_forest() %>% 
-  set_engine("ranger") %>% 
-  set_mode("classification")
 
 # Define an XGBoost model with hyperparameters set for tuning
-xgb_spec <- boost_tree(trees = 1000,
+xgb_spec <- boost_tree(trees = 1000, # Only have 1000 trees
                         tree_depth = tune(), #Maximum depth of the tree
                         min_n = tune(), #Minimum no. of data points in a leaf node
                         loss_reduction = tune(), #Minimum loss reduction (gamma)
@@ -323,12 +311,12 @@ surv_recipe <- recipe(event ~ AGE + APOE4 , data = train_data)
 # K-fold cross validation
 cv_folds <- vfold_cv(train_data, v=5, repeats=3)
 
-# Define the Random forest model 
-rf_model <- rand_forest(mtry = tune(),
-  trees = 1000,
-  min_n = tune()) %>% 
+# Define the Random forest model with hyperparameters set for tuning, settting engine to 'ranger' provides a fast implementation of random forests for this classification task & Set mode to 'classification' for binary outcomes
+rf_model <- rand_forest(trees = 1000, #1000 trees in the forest
+                        mtry = tune(), #No. of features to consider at each split
+                        min_n = tune()) %>% #Min no. of data points in a leaf node
   set_engine("ranger") %>% 
-  set_mode("classification")
+  set_mode("classification") 
 
 rf_wf <- workflow() %>% add_recipe(surv_recipe) %>% add_model(rf_model)
 
@@ -345,6 +333,100 @@ rf_grid <- tune_grid(rf_wf,
 rf_grid %>% collect_metrics()
 
 rf_grid %>% show_best("roc_auc")
+
+
+# ---------------------------------------------
+# Define an XGBoost model with hyperparameters set for tuning
+xgb_spec <- boost_tree(trees = 1000,
+                        tree_depth = tune(), #Maximum depth of the tree
+                        min_n = tune(), #Minimum no. of data points in a leaf node
+                        loss_reduction = tune(), #Minimum loss reduction (gamma)
+                        sample_size = tune(), #Subsample ratio of the training data
+                        mtry = tune(), #No. of features to consider at each split
+                        learn_rate = tune()) %>% #Learning rate (eta)
+  set_engine("xgboost", objective = "binary:logistic") %>% 
+  set_mode("classification")
+
+xgb_spec 
+
+# Create a grid for hyperparameter tuning using a Latin hypercube design
+xgb_grid <- grid_latin_hypercube(tree_depth(), #Maximum depth of the tree
+                                  min_n(), #Min no. of data points in a leaf node
+                                  loss_reduction(), #Minimum loss reduction (gamma)
+                                  sample_size = sample_prop(), #Subsample ratio of the training
+                                  finalize(mtry(), train_data),
+                                  learn_rate(),
+                                  size = 20) #Generate a set of 20 combinations of these hyperparameters for the tuning process
+xgb_grid
+
+# Create a workflow combining the recipe and the XGBoost model
+xgb_wf <- workflow() %>% add_recipe(surv_recipe) %>% add_model(xgb_spec)
+
+# Define 5-fold cross-validation with 3 repeats
+cv_folds <- vfold_cv(train_data, v=5, repeats=3)
+
+# Register parallel processing to speed up computation
+doParallel::registerDoParallel()
+
+# Set seed for reproducibility in tuning
+set.seed(234)
+
+# Tune the XGBoost model using cross-validation folds and the grid of hyperparameters
+xgb_res <- tune_grid(xgb_wf, 
+                     resamples = cv_folds, 
+                     grid = xgb_grid,
+                     control = control_grid(save_pred = TRUE))
+
+# Collect and print the cross-validation results
+xgb_res
+
+# Explore the results
+collect_metrics(xgb_res)
+
+# Explore the results, focusing on the ROC AUC metric
+xgb_res %>%
+  collect_metrics() %>%
+  filter(.metric == "roc_auc") %>%
+  select(mean, mtry:sample_size) %>%
+  pivot_longer(mtry:sample_size,
+               values_to = "value",
+               names_to = "parameter"
+  ) %>%
+  ggplot(aes(value, mean, color = parameter)) +
+  geom_point(alpha = 0.8, show.legend = FALSE) +
+  facet_wrap(~parameter, scales = "free_x") +
+  labs(x = NULL, y = "AUC")
+
+xgb_res
+
+# Show the best results based on ROC AUC
+show_best(xgb_res, metric = "roc_auc")
+
+# Select the best hyperparameters based on ROC AUC
+best_auc <- select_best(xgb_res, "roc_auc")
+best_auc
+
+# Finalize the workflow with the best hyperparameters
+final_xgb <- finalize_workflow(xgb_wf, best_auc)
+final_xgb
+
+# Fit the finalized model on the training set and evaluate it on the testing set
+final_res <- last_fit(final_xgb, vb_split)
+
+# Collect and print the evaluation metrics
+collect_metrics(final_res)
+
+# Plot the ROC curve for the final model's predictions
+final_res %>%
+  collect_predictions() %>%
+  roc_curve(win, .pred_win) %>%
+  ggplot(aes(x = 1 - specificity, y = sensitivity)) +
+  geom_line(size = 1.5, color = "midnightblue") +
+  geom_abline(
+    lty = 2, alpha = 0.5,
+    color = "gray50",
+    size = 1.2
+  )
 ```
 
 # Trying all Recipies on Tuned Models
@@ -354,6 +436,7 @@ rf_grid %>% show_best("roc_auc")
 
 # Import preprocessed data 
 surv_df <- read.csv("preprocessed_data.csv") #survival_dataframe 
+View(surv_df)
 
 # Convert the event column to a factor
 surv_df$event <- factor(surv_df$event, levels = c(0, 1), labels = c("No AD", "AD"))
@@ -369,9 +452,13 @@ test_data <- testing(data_split) # Testing set (25% of the data)
 # Define a recipe for preprocessing the data, using 'AGE' and 'APOE4' to predict 'event'
 surv_recipe <- recipe(event ~ AGE + APOE4 , data = train_data)
 
-surv_recipe1 <- recipe(event ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad + PTGENDER, data = train_data) # Factor gender
+# Define another recipe for preprocessing the data using familial history predictors to predict 'event'
+surv_recipe1 <- recipe(event ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad, data = train_data)
 
+# Define a recipe for preprocessing the data using cognitive test scores and education level to predict 'event'
 surv_recipe2 <- recipe(event ~ mPACCtrailsb + MMSE + PTEDUCAT, data = train_data)
+
+# Define a recipe for preprocessing the data using gender, age and _____ and education level to predict 'event'
 ```
 
 # SURVIVAL ANALYSIS MODEL
