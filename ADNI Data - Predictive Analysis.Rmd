@@ -74,6 +74,9 @@ install.packages("censored")
 library(censored)
 
 
+# Install packages for plotting survival analysis curves
+install.packages("survival")
+library(survival)
 ```
 
 library(modeldata) \# WHY DO I NEED THIS?
@@ -194,6 +197,20 @@ metrics
 ```
 
 # Surv_recipe - XGBOOST Model Tuning
+
+**Random Forest:**
+
+1.  **n_estimators:** The number of trees in the forest. Increasing the number of trees can lead to better performance, but also increases computation time.
+
+2.  **max_depth:** The maximum depth of the tree. Deeper trees can capture more complex relationships in the data but may also lead to overfitting.
+
+**XGBoost:**
+
+1.  **learning_rate (eta):** The step size shrinkage used in update to prevent overfitting. Lower values make the model more robust but require more boosting rounds.
+
+2.  **max_depth:** The maximum depth of a tree. Deeper trees can capture more complex patterns but may lead to overfitting.
+
+These are some of the key parameters that can be tuned for Random Forest and XGBoost models to optimize performance for specific datasets and tasks. It's important to perform thorough experimentation and cross-validation to find the optimal combination of parameter values.
 
 ```{r}
 # Import preprocessed data 
@@ -457,8 +474,8 @@ surv_df <- read.csv("preprocessed_data.csv")
 # In the dataset, we can see the time to event in the VISCODE column as well as the status of the participant. For a participant with the status "No AD". When the time to event for a participant with the status "No AD" is labeled as censored, it means that the event of interest (such as progression to Alzheimer's disease) did not occur within the observed time period. This could be due to various reasons; the study ending before the event could happen to that participant, or simply because the event has not yet occurred at the time of data collection. Censored data is important in survival analysis, where researchers are interested in understanding the time until an event of interest occurs, but not all participants experience the event during the study period.
 
 surv_df1 <- surv_df %>% 
-  mutate(diagnosis_surv  = Surv(VISCODE, event == "AD"), 
-    .keep = "unused")
+  mutate(diagnosis_surv = Surv(VISCODE, event == "AD")) %>%
+  select(diagnosis_surv, everything())
 View(surv_df1)
 
 # For our resampling strategy, let’s use a 3-way split into training, validation, and test set.
@@ -479,23 +496,24 @@ survreg_spec <- survival_reg() %>%
   set_engine("survival") %>% 
   set_mode("censored regression")
 
-rec_other <- recipe(diagnosis_surv ~ AGE + APOE4, data = train_data) 
+surv_rec <- recipe(diagnosis_surv ~ AGE + APOE4, data = train_data) 
 
 # We combine the recipe and the model into a workflow. This allows us to easily resample the model because all preprocessing steps are applied to the training set and the validation set for us.
 
 survreg_wflow <- workflow() %>% 
-  add_recipe(rec_other) %>% 
+  add_recipe(surv_rec) %>% 
   add_model(survreg_spec)
 
 # To fit and evaluate the model, we need the training and validation sets. While we can access them each on their own, validation_set() extracts them both, in a manner that emulates a single resample of the data. This enables us to use fit_resamples() and other tuning functions in the same way as if we had used some other resampling scheme (such as cross-validation).
 
-# We are calculating several performance metrics: the Brier score, its integrated version, the area under the ROC curve, and the concordance index. Note that all of these are used in a version tailored to survival analysis. The concordance index uses the predicted event time to measure the model’s ability to rank the observations correctly. The Brier score and the ROC curve use the predicted probability of survival at a given time. We evaluate these metrics every 30 days up to 300 days, as provided in the eval_time argument. The Brier score is a measure of the accuracy of the predicted probabilities, while the ROC curve is a measure of the model’s ability to discriminate between events and non-events at the given time point. Because these metrics are defined “at a given time,” they are also referred to as dynamic metrics.
-
 surv_rset <- validation_set(data_split)
+
+# We are calculating several performance metrics: the Brier score, its integrated version, the area under the ROC curve, and the concordance index. Note that all of these are used in a version tailored to survival analysis. The concordance index uses the predicted event time to measure the model’s ability to rank the observations correctly. The Brier score and the ROC curve use the predicted probability of survival at a given time. We evaluate these metrics every 30 days up to 300 days, as provided in the eval_time argument. The Brier score is a measure of the accuracy of the predicted probabilities, while the ROC curve is a measure of the model’s ability to discriminate between events and non-events at the given time point. Because these metrics are defined “at a given time,” they are also referred to as dynamic metrics.
 
 survival_metrics <- metric_set(brier_survival_integrated, brier_survival,
                                roc_auc_survival, concordance_survival)
-evaluation_time_points <- seq(0, 300, 30)
+
+evaluation_time_points <- seq(0, 144, 6)
 
 survreg_res <- fit_resamples(
   survreg_wflow,
@@ -505,6 +523,7 @@ survreg_res <- fit_resamples(
   control = control_resamples(save_pred = TRUE)
 )
 
+collect_predictions(survreg_res)
 # The structure of survival model predictions is slightly different from classification and regression model predictions:
 preds <- collect_predictions(survreg_res)
 preds
@@ -570,17 +589,3 @@ How can we visually compare the models to see which model is superior?
 
 
 ```
-
-**Random Forest:**
-
-1.  **n_estimators:** The number of trees in the forest. Increasing the number of trees can lead to better performance, but also increases computation time.
-
-2.  **max_depth:** The maximum depth of the tree. Deeper trees can capture more complex relationships in the data but may also lead to overfitting.
-
-**XGBoost:**
-
-1.  **learning_rate (eta):** The step size shrinkage used in update to prevent overfitting. Lower values make the model more robust but require more boosting rounds.
-
-2.  **max_depth:** The maximum depth of a tree. Deeper trees can capture more complex patterns but may lead to overfitting.
-
-These are some of the key parameters that can be tuned for Random Forest and XGBoost models to optimize performance for specific datasets and tasks. It's important to perform thorough experimentation and cross-validation to find the optimal combination of parameter values.
