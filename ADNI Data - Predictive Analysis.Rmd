@@ -11,7 +11,7 @@ date: "2023-03-29"
 ```{r}
 
 # Install and load the caret package, which provides a set of functions for training and plotting classification and regression models.
-install.packages("caret")
+# install.packages("caret")
 library(caret)
 
 # Install and load the naniar package, which provides functions for exploring missing data patterns.
@@ -24,11 +24,11 @@ library(parsnip)
 
 
 # Install and load the ranger package, which provides an efficient implementation of random forests.
-install.packages("ranger")
+# install.packages("ranger")
 library(ranger)
 
 # Install and load the tidymodels package, which provides a framework for modeling and machine learning.
-install.packages("tidymodels")
+# install.packages("tidymodels")
 library(tidymodels)
 # library(rsample) # For resampling methods; data splitting and resampling methods, such as cross-validation and bootstrapping.
 # library(recipes) # For preprocessing and feature engineering tasks, such as data transformation and variable selection.
@@ -51,35 +51,37 @@ library(tidyverse)
 # rlang: For advanced manipulation and programming with R expressions.
 
 # Install and load the yardstick package, which provides tools for evaluating models with tidy data principles.
-install.packages("yardstick")
+# install.packages("yardstick")
 library(yardstick)
 
 
 # Install the following packages: aorsf, censored, glmnet, modeldatatoo, and tidymodels.
 
 # This package implements the elastic net regularization method for fitting generalized linear models (GLMs) and Cox proportional hazards models. Elastic net is a regularization technique that combines both L1 (lasso) and L2 (ridge) penalties to overcome some of the limitations of these individual methods, particularly in high-dimensional data settings. It's widely used for feature selection and regularization in regression and survival analysis.
-install.packages("glmnet")
+# install.packages("glmnet")
 library(glmnet)
 
 # This package provides functions for creating synthetic datasets for modeling and simulation purposes. Synthetic datasets are artificially generated data that mimic the characteristics of real-world data. They are useful for testing models, evaluating algorithms, and conducting sensitivity analyses without relying on actual data, which may be limited or sensitive.
-install.packages("modeldatatoo")
+# install.packages("modeldatatoo")
 library(modeldatatoo)
 
 # This package stands for "Adaptive Orthogonal Random Survival Forests". It provides tools for building survival models using random forests with the adaptive orthogonal direction method. Random forests are an ensemble learning method for classification, regression, and survival analysis, and this package offers enhancements specifically for survival analysis.
-install.packages("aorsf")
+# install.packages("aorsf")
 library(aorsf)
 
 # This package provides functions for analyzing survival data with censoring. Survival analysis deals with time-to-event data, where the "event" of interest could be death, failure, or any other predefined endpoint. Censoring occurs when the event of interest is not observed for some subjects within the study period. This package offers various methods and tools for handling censored survival data.
-install.packages("censored")
+# install.packages("censored")
 library(censored)
 
 
 # Install packages for plotting survival analysis curves
-install.packages("survival")
+# install.packages("survival")
 library(survival)
-```
 
-library(modeldata) \# WHY DO I NEED THIS?
+# For parallel processing
+# install.packages("doParallel")
+library(doParallel)
+```
 
 ## Building and Evaluating Predictive Models using the Tidymodels
 
@@ -198,20 +200,6 @@ metrics
 
 # Surv_recipe - XGBOOST Model Tuning
 
-**Random Forest:**
-
-1.  **n_estimators:** The number of trees in the forest. Increasing the number of trees can lead to better performance, but also increases computation time.
-
-2.  **max_depth:** The maximum depth of the tree. Deeper trees can capture more complex relationships in the data but may also lead to overfitting.
-
-**XGBoost:**
-
-1.  **learning_rate (eta):** The step size shrinkage used in update to prevent overfitting. Lower values make the model more robust but require more boosting rounds.
-
-2.  **max_depth:** The maximum depth of a tree. Deeper trees can capture more complex patterns but may lead to overfitting.
-
-These are some of the key parameters that can be tuned for Random Forest and XGBoost models to optimize performance for specific datasets and tasks. It's important to perform thorough experimentation and cross-validation to find the optimal combination of parameter values.
-
 ```{r}
 # Import preprocessed data 
 surv_df <- read.csv("preprocessed_data.csv") #survival_dataframe 
@@ -234,10 +222,10 @@ surv_recipe <- recipe(event ~ AGE + APOE4 , data = train_data)
 # Define an XGBoost model with hyperparameters set for tuning
 xgb_spec <- boost_tree(trees = 1000, # Only have 1000 trees
                         tree_depth = tune(), #Maximum depth of the tree
-                        min_n = tune(), #Minimum no. of data points in a leaf node
-                        loss_reduction = tune(), #Minimum loss reduction (gamma)
-                        sample_size = tune(), #Subsample ratio of the training data
-                        mtry = tune(), #No. of features to consider at each split
+                        # min_n = tune(), #Minimum no. of data points in a leaf node
+                        # loss_reduction = tune(), #Minimum loss reduction (gamma)
+                        # sample_size = tune(), #Subsample ratio of the training data
+                        # mtry = tune(), #No. of features to consider at each split
                         learn_rate = tune()) %>% #Learning rate (eta)
   set_engine("xgboost", objective = "binary:logistic") %>% 
   set_mode("classification")
@@ -246,10 +234,10 @@ xgb_spec
 
 # Create a grid for hyperparameter tuning using a Latin hypercube design
 xgb_grid <- grid_latin_hypercube(tree_depth(), #Maximum depth of the tree
-                                  min_n(), #Min no. of data points in a leaf node
-                                  loss_reduction(), #Minimum loss reduction (gamma)
-                                  sample_size = sample_prop(), #Subsample ratio of the training
-                                  finalize(mtry(), train_data),
+                                  # min_n(), #Min no. of data points in a leaf node
+                                  # loss_reduction(), #Minimum loss reduction (gamma)
+                                  # sample_size = sample_prop(), #Subsample ratio of the training
+                                  # finalize(mtry(), train_data),
                                   learn_rate(),
                                   size = 20) #Generate a set of 20 combinations of these hyperparameters for the tuning process
 xgb_grid
@@ -279,18 +267,18 @@ xgb_res
 collect_metrics(xgb_res)
 
 # Visualize the results, focusing on the ROC AUC metric
-xgb_res %>%
-  collect_metrics() %>%
-  filter(.metric == "roc_auc") %>%
-  select(mean, mtry:sample_size) %>%
-  pivot_longer(mtry:sample_size,
-               values_to = "value",
-               names_to = "parameter"
-  ) %>%
-  ggplot(aes(value, mean, color = parameter)) +
-  geom_point(alpha = 0.8, show.legend = FALSE) +
-  facet_wrap(~parameter, scales = "free_x") +
-  labs(x = NULL, y = "AUC")
+# xgb_res %>%
+#   collect_metrics() %>%
+#   filter(.metric == "roc_auc") %>%
+#   select(mean, mtry:sample_size) %>%
+#   pivot_longer(mtry:sample_size,
+#                values_to = "value",
+#                names_to = "parameter"
+#   ) %>%
+#   ggplot(aes(value, mean, color = parameter)) +
+#   geom_point(alpha = 0.8, show.legend = FALSE) +
+#   facet_wrap(~parameter, scales = "free_x") +
+#   labs(x = NULL, y = "AUC")
 
 # Show the best results based on ROC AUC
 show_best(xgb_res)
@@ -315,8 +303,7 @@ final_res %>% collect_predictions() %>% View()
 # Plot the ROC curve for the final model's predictions
 final_res %>%
   collect_predictions() %>%
-  mutate(# Convert 'event' to numeric (0,1)
-         pred_class_numeric = as.numeric(.pred_class)) %>%
+  mutate(pred_class_numeric = as.numeric(.pred_class)) %>%
   roc_curve(truth=event, pred_class_numeric) %>%
   ggplot(aes(x = 1 - specificity, y = sensitivity)) +
   geom_line(size = 1.5, color = "midnightblue") +
@@ -348,16 +335,20 @@ test_data <- testing(data_split) # Testing set (25% of the data)
 surv_recipe <- recipe(event ~ AGE + APOE4 , data = train_data)
 
 # Define the Random forest model with hyperparameters set for tuning, settting engine to 'ranger' provides a fast implementation of random forests for this classification task & Set mode to 'classification' for binary outcomes
+
+# Define the Random forest model with hyperparameters set for tuning
 rf_spec <- rand_forest(trees = 1000, #1000 trees in the forest
-                        mtry = tune(), #No. of features to consider at each split
-                        min_n = tune()) %>% #Min no. of data points in a leaf node
-  set_engine("ranger") %>% 
-  set_mode("classification") 
+                       mtry = tune(), #No. of features to consider at each split
+                       min_n = tune()) %>% #Min no. of data points in a leaf node
+  set_engine("ranger") %>%
+  set_mode("classification")
 
 # Create a grid for hyperparameter tuning using a Latin hypercube design
 rf_grid <- grid_latin_hypercube(min_n(), #Min no. of data points in a leaf node
-                                  finalize(mtry(), train_data),
-                                  size = 20) #Generate a set of 20 combinations of these hyperparameters for the tuning process
+                                finalize(mtry(), train_data),
+                                size = 20) #Generate a set of 20 combinations of these hyperparameters for the tuning process
+
+
 rf_grid
 
 # Create a workflow combining the recipe and the XGBoost model
@@ -489,10 +480,14 @@ train_data <- training(data_split)
 survfit(diagnosis_surv ~ 1, data = train_data) %>% plot()
 # We can see that the majority of paticipants are not diagnosed with AD even after 140 viscodes.
 
-# ---------------------------A FIRST MODEL --------------------------# 
+# --------------------------- --------------------------# 
 # The censored package includes parametric, semi-parametric, and tree-based models for this type of analysis. To start, we are fitting a parametric survival model with the default of assuming a Weibull distribution on the time to disposition. We’ll explore the more flexible models once we have a sense of how well this more restrictive model performs on this dataset.
 
 survreg_spec <- survival_reg() %>% 
+  set_engine("survival") %>% 
+  set_mode("censored regression")
+
+survph_spec <- proportional_hazards() %>% 
   set_engine("survival") %>% 
   set_mode("censored regression")
 

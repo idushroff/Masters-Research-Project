@@ -11,31 +11,31 @@ date: "2023-03-29"
 ```{r}
 
 # Install and load the naniar package, which provides functions for exploring missing data patterns.
-install.packages("naniar")
+# install.packages("naniar")
 library(naniar)
 
 # Install the 'tableone' package for quickly understanding the distribution of variables as it allows for generating summary tables and statistics (means, medians, counts, and percentages) for comparing characteristics between different treatment/demographic groups or other categorical variables in a dataset. 
-install.packages("remotes")
-remotes::install_github("kaz-yos/tableone")
+# install.packages("remotes")
+# remotes::install_github("kaz-yos/tableone")
 library(tableone)
 
 
 # Install packages for plotting survival analysis curves
-install.packages("survival")
+# install.packages("survival")
 library(survival)
 
 # Survminer provides functions for creating more advances and visually appealing survival analysis plots. 
-install.packages("survminer")
+# install.packages("survminer")
 library(survminer)
 
 
 # Install and load the sjlabelled package, which provides functions for working with labelled data.
-install.packages("sjlabelled")
+# install.packages("sjlabelled")
 library(sjlabelled)
 
 # Install and load the tidyverse package, which is a collection of packages for data manipulation and visualization.
 
-install.packages("tidyverse")
+# install.packages("tidyverse")
 library(tidyverse)
 
 # readr: For reading CSV files
@@ -58,7 +58,7 @@ library(tidyverse)
 
 #For users of R, we have developed a data package “ADNIMERGE” which contains coded data, documentation, and analysis vignettes. It depends on Frank Harrrel’s Hmisc package which can be installed from the R package repository (CRAN) by:
   
-install.packages("Hmisc")
+# install.packages("Hmisc")
 library(Hmisc)
 
 
