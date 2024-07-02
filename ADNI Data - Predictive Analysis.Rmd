@@ -14,14 +14,6 @@ date: "2023-03-29"
 # install.packages("caret")
 library(caret)
 
-# Install and load the naniar package, which provides functions for exploring missing data patterns.
-# install.packages("naniar")
-library(naniar)
-
-# Install the parsnip package, for modeling. Useful because it provides a consistent interface to many different types of models.
-# install.packages("parsnip")
-library(parsnip)
-
 
 # Install and load the ranger package, which provides an efficient implementation of random forests.
 # install.packages("ranger")
@@ -30,9 +22,13 @@ library(ranger)
 # Install and load the tidymodels package, which provides a framework for modeling and machine learning.
 # install.packages("tidymodels")
 library(tidymodels)
+
+# library(parsnip) # Install the parsnip package, for modeling. Useful because it provides a consistent interface to many different types of models.
 # library(rsample) # For resampling methods; data splitting and resampling methods, such as cross-validation and bootstrapping.
 # library(recipes) # For preprocessing and feature engineering tasks, such as data transformation and variable selection.
 # library(workflows) # Provides a framework for creating and managing modeling workflows, allowing you to define and execute a series of preprocessing, modeling, and evaluation steps in a coherent manner.
+# library(yardstick) # Install and load the yardstick package, which provides tools for evaluating models with tidy data principles.
+
 
 # Install and load the tidyverse package, which is a collection of packages for data manipulation and visualization.
 # install.packages("tidyverse")
@@ -50,12 +46,6 @@ library(tidyverse)
 # magrittr: For creating expressive pipelines using the pipe operator %>%.
 # rlang: For advanced manipulation and programming with R expressions.
 
-# Install and load the yardstick package, which provides tools for evaluating models with tidy data principles.
-# install.packages("yardstick")
-library(yardstick)
-
-
-# Install the following packages: aorsf, censored, glmnet, modeldatatoo, and tidymodels.
 
 # This package implements the elastic net regularization method for fitting generalized linear models (GLMs) and Cox proportional hazards models. Elastic net is a regularization technique that combines both L1 (lasso) and L2 (ridge) penalties to overcome some of the limitations of these individual methods, particularly in high-dimensional data settings. It's widely used for feature selection and regularization in regression and survival analysis.
 # install.packages("glmnet")
@@ -105,7 +95,14 @@ train_data <- training(data_split) # Training set (75% of the data)
 test_data <- testing(data_split) # Testing set (25% of the data)
 
 # Define a recipe for preprocessing the data, using 'AGE' and 'APOE4' to predict 'event'
-surv_recipe <- recipe(event ~ AGE + APOE4 , data = train_data)
+# surv_recipe <- recipe(event ~ AGE + APOE4 , data = train_data)
+
+# Define a recipe for preprocessing the data using cognitive test scores and education level to predict 'event'
+# surv_recipe <- recipe(event ~ mPACCtrailsB + MMSE + PTEDUCAT, data = train_data)
+
+# Define a recipe for preprocessing the data using familial history predictors to predict 'event'
+surv_recipe <- recipe(event ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad, data = train_data)
+
 
 
 # Define a logistic regression model for classification
@@ -216,16 +213,22 @@ train_data <- training(data_split) # Training set (75% of the data)
 test_data <- testing(data_split) # Testing set (25% of the data)
 
 # Define a recipe for preprocessing the data, using 'AGE' and 'APOE4' to predict 'event'
-surv_recipe <- recipe(event ~ AGE + APOE4 , data = train_data)
+# surv_recipe <- recipe(event ~ AGE + APOE4 , data = train_data)
+
+# Define a recipe for preprocessing the data using cognitive test scores and education level to predict 'event'
+surv_recipe <- recipe(event ~ mPACCtrailsB + MMSE + PTEDUCAT, data = train_data)
+
+# Define a recipe for preprocessing the data using familial history predictors to predict 'event'
+# surv_recipe <- recipe(event ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad, data = train_data)
 
 
 # Define an XGBoost model with hyperparameters set for tuning
 xgb_spec <- boost_tree(trees = 1000, # Only have 1000 trees
                         tree_depth = tune(), #Maximum depth of the tree
-                        # min_n = tune(), #Minimum no. of data points in a leaf node
-                        # loss_reduction = tune(), #Minimum loss reduction (gamma)
-                        # sample_size = tune(), #Subsample ratio of the training data
-                        # mtry = tune(), #No. of features to consider at each split
+                        min_n = tune(), #Minimum no. of data points in a leaf node
+                        loss_reduction = tune(), #Minimum loss reduction (gamma)
+                        sample_size = tune(), #Subsample ratio of the training data
+                        mtry = tune(), #No. of features to consider at each split
                         learn_rate = tune()) %>% #Learning rate (eta)
   set_engine("xgboost", objective = "binary:logistic") %>% 
   set_mode("classification")
@@ -234,10 +237,10 @@ xgb_spec
 
 # Create a grid for hyperparameter tuning using a Latin hypercube design
 xgb_grid <- grid_latin_hypercube(tree_depth(), #Maximum depth of the tree
-                                  # min_n(), #Min no. of data points in a leaf node
-                                  # loss_reduction(), #Minimum loss reduction (gamma)
-                                  # sample_size = sample_prop(), #Subsample ratio of the training
-                                  # finalize(mtry(), train_data),
+                                  min_n(), #Min no. of data points in a leaf node
+                                  loss_reduction(), #Minimum loss reduction (gamma)
+                                  sample_size = sample_prop(), #Subsample ratio of the training
+                                  finalize(mtry(), train_data),
                                   learn_rate(),
                                   size = 20) #Generate a set of 20 combinations of these hyperparameters for the tuning process
 xgb_grid
@@ -292,25 +295,36 @@ final_xgb <- finalize_workflow(xgb_wf, best_auc)
 final_xgb
 
 # Fit the finalized model on the training set and evaluate it on the testing set
-final_res <- last_fit(final_xgb, data_split)
+final_res_xgb <- last_fit(final_xgb, data_split)
 
 # Collect and print the evaluation metrics
-collect_metrics(final_res)
+collect_metrics(final_res_xgb)
 
 # View predictions
-final_res %>% collect_predictions() %>% View()
+final_res_xgb %>% collect_predictions() %>% View()
 
 # Plot the ROC curve for the final model's predictions
-final_res %>%
-  collect_predictions() %>%
-  mutate(pred_class_numeric = as.numeric(.pred_class)) %>%
-  roc_curve(truth=event, pred_class_numeric) %>%
-  ggplot(aes(x = 1 - specificity, y = sensitivity)) +
-  geom_line(size = 1.5, color = "midnightblue") +
-  geom_abline(
-    lty = 2, alpha = 0.5,
-    color = "gray50",
-    size = 1.2)
+# final_res %>%
+#   collect_predictions() %>%
+#   mutate(pred_class_numeric = as.numeric(.pred_class)) %>%
+#   roc_curve(truth=event, pred_class_numeric) %>%
+#   ggplot(aes(x = 1 - specificity, y = sensitivity)) +
+#   geom_line(size = 1.5, color = "midnightblue") +
+#   geom_abline(
+#     lty = 2, alpha = 0.5,
+#     color = "gray50",
+#     size = 1.2)
+
+# predictions on the testing set
+final_res_xgb %>% collect_predictions() %>% ggplot(aes(x=.pred_AD, fill=.pred_class)) + geom_density(alpha=0.5)
+View(final_res_xgb)
+```
+
+```{r}
+library(vip)
+final_xgb <- fit(data = train_data) %>%
+  pull_workflow_fit() %>%
+  vip(geom = "point")
 ```
 
 # Surv_recipe - Random Forest Model Tuning
@@ -332,7 +346,14 @@ train_data <- training(data_split) # Training set (75% of the data)
 test_data <- testing(data_split) # Testing set (25% of the data)
 
 # Define a recipe for preprocessing the data, using 'AGE' and 'APOE4' to predict 'event'
-surv_recipe <- recipe(event ~ AGE + APOE4 , data = train_data)
+# surv_recipe <- recipe(event ~ AGE + APOE4 , data = train_data)
+
+# Define a recipe for preprocessing the data using cognitive test scores and education level to predict 'event'
+surv_recipe <- recipe(event ~ mPACCtrailsB + MMSE + PTEDUCAT, data = train_data)
+
+# Define a recipe for preprocessing the data using familial history predictors to predict 'event'
+# surv_recipe <- recipe(event ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad, data = train_data)
+
 
 # Define the Random forest model with hyperparameters set for tuning, settting engine to 'ranger' provides a fast implementation of random forests for this classification task & Set mode to 'classification' for binary outcomes
 
@@ -406,52 +427,24 @@ final_res <- last_fit(final_rf, data_split)
 # Collect and print the evaluation metrics
 collect_metrics(final_res)
 
-# Plot the ROC curve for the final model's predictions
 final_res %>%
-  collect_predictions() %>%
-  mutate(# Convert 'event' to numeric (0,1)
-         pred_class_numeric = as.numeric(.pred_class)) %>%
-  roc_curve(truth=event, pred_class_numeric) %>%
-  ggplot(aes(x = 1 - specificity, y = sensitivity)) +
-  geom_line(size = 1.5, color = "midnightblue") +
-  geom_abline(
-    lty = 2, alpha = 0.5,
-    color = "gray50",
-    size = 1.2)
+  collect_predictions()%>%
+  mutate(pred_class_numeric = 3 - as.numeric(.pred_class)) %>% View()
 
+# Plot the ROC curve for the final model's predictions
+# final_res %>%
+#   collect_predictions() %>%
+#   mutate(pred_class_numeric = 3 - as.numeric(.pred_class)) %>%
+#   roc_curve(truth=event, pred_class_numeric) %>%
+#   ggplot(aes(x = 1 - specificity, y = sensitivity)) +
+#   geom_point(size = 1.5, color = "midnightblue") +
+#   geom_abline(
+#     lty = 2, alpha = 0.5,
+#     color = "gray50",
+#     size = 1.2)
 
-```
+final_res %>% collect_predictions() %>% ggplot(aes(x=.pred_AD, fill=.pred_class)) + geom_density(alpha=0.5)
 
-# Trying all Recipes on Tuned Models
-
-```{r}
-
-
-# Import preprocessed data 
-surv_df <- read.csv("preprocessed_data.csv") #survival_dataframe 
-View(surv_df)
-
-# Convert the event column to a factor
-surv_df$event <- factor(surv_df$event, levels = c(0, 1), labels = c("No AD", "AD"))
-
-# Set seed for reproducibility
-set.seed(123)
-
-# Split the data into training and testing sets
-data_split <- initial_split(surv_df, prop = 3/4, strata = event)
-train_data <- training(data_split) # Training set (75% of the data)
-test_data <- testing(data_split) # Testing set (25% of the data)
-
-# Define a recipe for preprocessing the data, using 'AGE' and 'APOE4' to predict 'event'
-surv_recipe <- recipe(event ~ AGE + APOE4 , data = train_data)
-
-# Define another recipe for preprocessing the data using familial history predictors to predict 'event'
-surv_recipe1 <- recipe(event ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad, data = train_data)
-
-# Define a recipe for preprocessing the data using cognitive test scores and education level to predict 'event'
-surv_recipe2 <- recipe(event ~ mPACCtrailsb + MMSE + PTEDUCAT, data = train_data)
-
-# Define a recipe for preprocessing the data using gender, age and _____ and education level to predict 'event'
 ```
 
 # SURVIVAL ANALYSIS MODEL
@@ -519,6 +512,7 @@ survreg_res <- fit_resamples(
 )
 
 collect_predictions(survreg_res)
+
 # The structure of survival model predictions is slightly different from classification and regression model predictions:
 preds <- collect_predictions(survreg_res)
 preds
