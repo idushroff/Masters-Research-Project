@@ -300,7 +300,7 @@ final_res_xgb <- last_fit(final_xgb, data_split)
 # Collect and print the evaluation metrics
 collect_metrics(final_res_xgb)
 
-# View predictions
+# View predictions on the testing set
 final_res_xgb %>% collect_predictions() %>% View()
 
 # Plot the ROC curve for the final model's predictions
@@ -315,9 +315,8 @@ final_res_xgb %>% collect_predictions() %>% View()
 #     color = "gray50",
 #     size = 1.2)
 
-# predictions on the testing set
 final_res_xgb %>% collect_predictions() %>% ggplot(aes(x=.pred_AD, fill=.pred_class)) + geom_density(alpha=0.5)
-View(final_res_xgb)
+
 ```
 
 ```{r}
@@ -447,18 +446,18 @@ final_res %>% collect_predictions() %>% ggplot(aes(x=.pred_AD, fill=.pred_class)
 
 ```
 
-# SURVIVAL ANALYSIS MODEL
+# SURVIVAL ANALYSIS MODEL - censored regression Weibull distribution 
 
 ```{r}
 
 # Import preprocessed data 
 surv_df <- read.csv("preprocessed_data.csv") 
-# View(surv_df)
+View(surv_df)
 
 # In the dataset, we can see the time to event in the VISCODE column as well as the status of the participant. For a participant with the status "No AD". When the time to event for a participant with the status "No AD" is labeled as censored, it means that the event of interest (such as progression to Alzheimer's disease) did not occur within the observed time period. This could be due to various reasons; the study ending before the event could happen to that participant, or simply because the event has not yet occurred at the time of data collection. Censored data is important in survival analysis, where researchers are interested in understanding the time until an event of interest occurs, but not all participants experience the event during the study period.
 
 surv_df1 <- surv_df %>% 
-  mutate(diagnosis_surv = Surv(VISCODE, event == "AD")) %>%
+  mutate(diagnosis_surv = Surv(VISCODE, event == "1")) %>%
   select(diagnosis_surv, everything())
 View(surv_df1)
 
@@ -466,7 +465,6 @@ View(surv_df1)
 set.seed(403)
 
 data_split <- initial_validation_split(surv_df1)
-
 #----------------------------------
 # First, let’s pull out the training data and have a brief look at the response using a Kaplan-Meier curve.
 train_data <- training(data_split)
@@ -543,6 +541,188 @@ collect_metrics(survreg_res) %>%
 
 # Which metric to optimise for depends on whether separation or calibration is more important in the modeling problem at hand. We’ll go with calibration here. Since we don’t have a particular evaluation time that we want to predict well at, we are going to use the integrated Brier score as our main performance metric.
 
+
+#-------------------------#
+# Error in `estimate_tune_results()`:
+# ! All models failed. Run `show_notes(.Last.tune.result)` for more information.
+# Backtrace:
+#  1. ... %>% ggplot(aes(.eval_time, mean))
+#  5. tune:::collect_metrics.tune_results(survreg_res)
+#  6. tune::estimate_tune_results(x)
+
+#-------------------------#
+
+#troubleshooting: 
+show_notes(.Last.tune.result) #OR you can do: show_notes(survreg_res)
+
+
+# unique notes:
+# ────────────────────────────────────────────
+# Invalid survival times for this distribution
+
+# Check for negative or zero survival times
+summary(surv_df$VISCODE)
+
+   # Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+   # 0.00   24.00   36.00   52.66   84.00  144.00 
+
+# Check event encoding
+table(surv_df$event)
+
+#    0    1 
+# 1005  380 
+```
+
+SURVIVAL MODEL - WITHOUT SURIVIVAL TIMES / VISCODE = 0 as this may be causing the issue with the weibull distribution
+
+```{r}
+
+# Import preprocessed data 
+surv_df <- read.csv("preprocessed_data.csv") 
+View(surv_df)
+# Remove rows with zero survival times
+surv_df <- surv_df %>% filter(VISCODE > 0)
+
+# Check event encoding
+table(surv_df$event)
+
+#   0   1 
+# 954 380 
+
+# Or adjust zero survival times to a small positive value
+# surv_df <- surv_df %>% mutate(VISCODE = ifelse(VISCODE == 0, 1, VISCODE))
+
+# Check event encoding
+# table(surv_df$event)
+
+
+
+# Re-create the survival object and split the data again
+surv_df1 <- surv_df %>% 
+  mutate(diagnosis_surv = Surv(VISCODE, event == "AD")) %>%
+  select(diagnosis_surv, everything())
+
+data_split <- initial_validation_split(surv_df1)
+
+train_data <- training(data_split)
+
+survfit(diagnosis_surv ~ 1, data = train_data) %>% plot()
+
+# Re-specify the Weibull model
+survreg_spec <- survival_reg() %>%
+  set_engine("survival") %>%
+  set_mode("censored regression")
+
+# Re-create the workflow
+survreg_wflow <- workflow() %>%
+  add_recipe(surv_rec) %>%
+  add_model(survreg_spec)
+
+# Re-create the resampling set
+surv_rset <- validation_set(data_split)
+
+# Re-fit and evaluate the model
+survreg_res <- fit_resamples(
+  survreg_wflow,
+  resamples = surv_rset,
+  metrics = survival_metrics,
+  eval_time = evaluation_time_points, 
+  control = control_resamples(save_pred = TRUE)
+)
+
+# Collect and inspect predictions
+preds <- collect_predictions(survreg_res)
+View(preds)
+
+# Plot the ROC AUC
+collect_metrics(survreg_res) %>%
+  filter(.metric == "roc_auc_survival") %>%
+  ggplot(aes(.eval_time, mean)) +
+  geom_line() +
+  labs(x = "Evaluation Time", y = "Area Under the ROC Curve")
+
+# Plot the Brier score
+collect_metrics(survreg_res) %>%
+  filter(.metric == "brier_survival") %>%
+  ggplot(aes(.eval_time, mean)) +
+  geom_line() +
+  labs(x = "Evaluation Time", y = "Brier Score")
+
+# # Interpretation of this graph: 
+# Initial Low Scores: At the beginning of the evaluation period (near time 0), the Brier score is low, indicating high accuracy in the short-term predictions. This is expected because there are likely few events (deaths or disease progressions) early on, so the survival probabilities are close to 1, leading to low Brier scores.
+# 
+# Increasing Brier Scores: As time progresses, the Brier score increases. This suggests that the accuracy of the survival predictions decreases over time. This could be due to a number of factors such as more events occurring, making predictions harder, or the model not capturing long-term survival trends well.
+# 
+# Fluctuations: The score fluctuates over time, which indicates variability in the model's accuracy at different time points. This can occur if the number of events changes significantly at different times or if the model's assumptions do not hold uniformly across all time points.
+# 
+# High Brier Score Near End: Towards the end of the evaluation period, the Brier score spikes, indicating poor predictive accuracy. This could be due to a small number of subjects remaining in the study, leading to higher uncertainty and less reliable predictions.
+```
+
+# SURVIVAL ANALYSIS MODEL - censored regression COXPH distribution 
+
+```{r}
+
+# Import preprocessed data 
+surv_df <- read.csv("preprocessed_data.csv") 
+View(surv_df)
+
+# In the dataset, we can see the time to event in the VISCODE column as well as the status of the participant. For a participant with the status "No AD". When the time to event for a participant with the status "No AD" is labeled as censored, it means that the event of interest (such as progression to Alzheimer's disease) did not occur within the observed time period. This could be due to various reasons; the study ending before the event could happen to that participant, or simply because the event has not yet occurred at the time of data collection. Censored data is important in survival analysis, where researchers are interested in understanding the time until an event of interest occurs, but not all participants experience the event during the study period.
+
+surv_df1 <- surv_df %>% 
+  mutate(diagnosis_surv = Surv(VISCODE, event == "1")) %>%
+  select(diagnosis_surv, everything())
+View(surv_df1)
+
+# For our resampling strategy, let’s use a 3-way split into training, validation, and test set.
+set.seed(403)
+
+data_split <- initial_validation_split(surv_df1)
+
+#----------------------------------
+# First, let’s pull out the training data and have a brief look at the response using a Kaplan-Meier curve.
+train_data <- training(data_split)
+survfit(diagnosis_surv ~ 1, data = train_data) %>% plot()
+# We can see that the majority of paticipants are not diagnosed with AD even after 140 viscodes.
+
+# --------------------------- --------------------------# 
+# The censored package includes parametric, semi-parametric, and tree-based models for this type of analysis. To start, we are fitting a parametric survival model with the default of assuming a Weibull distribution on the time to disposition. We’ll explore the more flexible models once we have a sense of how well this more restrictive model performs on this dataset.
+
+# Specify the Cox proportional hazards model
+coxph_spec <- proportional_hazards() %>%
+  set_engine("survival") %>%
+  set_mode("censored regression")
+
+# Update the workflow to use the Cox model
+coxph_wflow <- workflow() %>%
+  add_recipe(surv_rec) %>%
+  add_model(coxph_spec)
+
+# Fit and evaluate the Cox model
+coxph_res <- fit_resamples(
+  coxph_wflow,
+  resamples = surv_rset,
+  metrics = survival_metrics,
+  eval_time = evaluation_time_points, 
+  control = control_resamples(save_pred = TRUE)
+)
+
+# Collect and inspect predictions
+coxph_preds <- collect_predictions(coxph_res)
+coxph_preds
+
+# Plot the ROC AUC for the Cox model
+collect_metrics(coxph_res) %>%
+  filter(.metric == "roc_auc_survival") %>%
+  ggplot(aes(.eval_time, mean)) +
+  geom_line() +
+  labs(x = "Evaluation Time", y = "Area Under the ROC Curve")
+
+# Plot the Brier score for the Cox model
+collect_metrics(coxph_res) %>%
+  filter(.metric == "brier_survival") %>%
+  ggplot(aes(.eval_time, mean)) +
+  geom_line() +
+  labs(x = "Evaluation Time", y = "Brier Score")
 
 ```
 
