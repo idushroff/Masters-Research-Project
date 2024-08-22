@@ -71,7 +71,7 @@ library(ADNIMERGE)
 
 # Checking out the different data files
 # View(adnimerge) 
-``
+
 ## clean viscode function 
 clean_viscode <- function(viscode) {
   as.numeric(as.character(factor(viscode, levels = c("sc",
@@ -246,8 +246,10 @@ progressors <- progressors1 %>% filter(VISCODE!=0)
 view(progressors)
 
 # for non converters you can do similar but take the last visit
-non_progressors <- df %>% group_by(RID) %>% arrange(VISCODE) %>% filter(!any(DX=="AD")) %>% slice_tail(n=1) %>% select(RID, VISCODE, DX, AGE, PTEDUCAT, PTGENDER, APOE4, MMSE, mPACCtrailsB, fam_hist_dad_dem, fam_hist_dad_ad, fam_hist_mum_dem, fam_hist_mum_ad)
+non_progressors <- df %>% group_by(RID) %>% arrange(VISCODE) %>% filter(!any(DX=="AD"), n()>1) %>% slice_tail(n=1) %>% select(RID, VISCODE, DX, AGE, PTEDUCAT, PTGENDER, APOE4, MMSE, mPACCtrailsB, fam_hist_dad_dem, fam_hist_dad_ad, fam_hist_mum_dem, fam_hist_mum_ad)
 view(non_progressors)
+
+
 
 surv_df <- rbind(progressors, non_progressors) %>% mutate(event=as.numeric(DX=="AD"))
 View(surv_df)
@@ -272,8 +274,6 @@ catVars <- c("PTGENDER")
 table1 <- CreateTableOne(vars = listVars, data = surv_df, factorVars = catVars, strata = c("event"))
 print(table1)
 
-# Render the data frame as a nicely formatted table using kable
-kable(table_df, format = "html", caption = "Summary Table")
 ```
 
 ### PLOT KM-Curve
@@ -726,5 +726,88 @@ print(ggsurv_education$plot)
 
 # Save preprocessed data to a CSV file
 write.csv(surv_df, "preprocessed_data.csv", row.names=FALSE)
+
+```
+
+```{r}
+
+# get the median: survival time t at which S(t) = 0.5 or the time at which 50% of those at risk are expected to still be alive. 
+KM <- survfit(Surv(VISCODE, event) ~ 1, data=surv_df)
+print(KM) 
+# unable to get median. why?
+
+# Using the tidy function from the broom package on the survfit() object to produce a table of the KM estimate of the survival function S(t)
+KM.tab <- tidy(KM) # save KM survival function as a tibble
+KM.tab
+
+# The estimate column is the kaplan mier estimated survival time at each given viscode/time point
+```
+
+```{r}
+
+plot(KM, ylab="Survival Probability", xlab="VISCODE")
+```
+
+# We should estimate KM survival functions for progressors and nonprogressors seperately:
+
+```{r}
+
+KM.Gender <- survfit(Surv(VISCODE, event) ~ PTGENDER, data=surv_df)
+KM.Gender
+tidy(KM.Gender)
+
+ggsurvplot(KM.Gender, risk.table=T, palette = "Accent", size=0.5, ggtheme = theme_minimal())
+
+KM.APOE4 <- survfit(Surv(VISCODE, event) ~ APOE4, data=surv_df)
+tidy(KM.APOE4)
+
+```
+
+```{r}
+
+# log rank test
+survdiff(Surv(VISCODE, event) ~ PTGENDER, data=surv_df)
+
+```
+
+```{r}
+# fitting a cox model 
+
+adni.cox <- coxph(Surv(VISCODE, event) ~ PTGENDER + AGE + APOE4 + MMSE + mPACCtrailsB + fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad, data=surv_df)
+summary(adni.cox)
+
+# coef = log hazards ratio
+# exp(coef) = similar interpretation to odds ratios
+```
+
+```{r}
+
+# we can tidy() the coxph() results and store them in a tibble data.frame
+adni.cox.tibble <- tidy(adni.cox, exponentiate = T, conf.int = T)
+adni.cox.tibble # display table
+
+# doing this (storing the cox ph model results as a data.frame makes it easy to use ggplot2 to create plots of the hazard ratios and confidence intervals.)
+
+# CREATE A FOREST PLOT
+ggplot(adni.cox.tibble,
+       aes(y=term, x=estimate, xmin=conf.low, xmax=conf.high)) + 
+  geom_pointrange() + #plots center point (x) an range (xmin, xmax)
+  geom_vline(xintercept=1, color="red") + #vertical line at HR = 1
+  labs(x="hazard ratio", title="Hazard ratios and 95% CIs") +
+  theme_classic()
+  
+```
+
+\# since the hazard ratio for gender contains one it is not considered to be a satistically significant variable
+
+#before hazard ratio = 1 -\> indicates factors decrease risk of AD? after = increased risk?
+
+#need help with
+
+#cox model is a safer way to
+
+#plot survival curve
+
+```{r}
 
 ```

@@ -1,0 +1,254 @@
+---
+title: "ADNI, AIBL, UK biobank Data - Descriptive Analysis"
+author: "Uditi Shah"
+date: '2024-08-13'
+output: html_document
+---
+
+```{r}
+
+# Install and load the tidyverse package, which is a collection of packages for data manipulation and visualization.
+# install.packages("tidyverse")
+library(tidyverse)
+
+# readr: For reading CSV files
+# dplyr: For data manipulation
+# ggplot2:For plots and graphs
+# tidyr: For tidying and reshaping data into a tidy format.
+# purrr: For functional programming and working with lists and vectors.
+# tibble: For creating and working with modern data frames.
+# stringr: For string manipulation and text processing.
+# forcats: For working with categorical data and factors.
+# lubridate: For working with dates and times.
+# magrittr: For creating expressive pipelines using the pipe operator %>%.
+# rlang: For advanced manipulation and programming with R expressions.
+
+```
+
+```{r}
+
+data <- read.csv("df_comb_ml.csv")
+# see the whole data_set
+View(data)
+```
+
+```{r}
+
+# Display the first 5 lines
+head(data, 5)
+```
+
+```{r}
+# dimensions
+dim(data)
+# 57066 rows and 15 columns
+```
+
+```{r}
+# all the possible unique values that exist for each column/variable
+length(unique(data$ID))
+# this means that there are 57066 individuals in our data set
+
+# filter is for rows
+# select is for columns
+# this can show us if there are NA = missing data, none = or unknown = which mean diff things
+# table (ColumnName)
+```
+
+```{r}
+# column/variable names
+names(data)
+
+# Attached is a set of data from ADNI, AIBL and UK Biobank
+# ID    - Sample.id
+# AGE    - Age in years
+# SEX - is female (?)
+# EDU   - years of education, bit different across cohorts
+# FH  - Parental history of AD
+# APOE4  - # of copies of APOE4 (0,1,2)
+# DX - Diagnosis (baseline?)
+# dataset - AIBL/ADNI/UKB
+# conv - Do they Convert to AD or not
+# AGE.bl - What is their age at baseline
+# event_time - When do they convert to AD or leave the study
+# APOE4_e4e4 - Do they have 2 copies of APOE4?
+# FH_na - Is their family history missing?
+# conv_fh - Do they have a history of AD or not (FH!=0)
+```
+
+```{r}
+
+
+# Install and load the naniar package, which provides functions for exploring missing data patterns.
+# install.packages("naniar")
+library(naniar)
+
+# View all the rows with dataset = ADNI 
+ADNI <- data[data$dataset == "ADNI", ]
+View(ADNI)
+
+gg_miss_var(ADNI) + ggtitle("Missing Values in Each Column of ADNI Dataset")
+vis_miss(ADNI) + labs(title = "Heatmap of Missing Values in ADNI Dataset")
+
+# View all the rows with dataset = ABIL 
+AIBL <- data[data$dataset == "AIBL", ]
+View(AIBL)
+
+gg_miss_var(AIBL) + ggtitle("Missing Values in Each Column of AIBL Dataset")
+vis_miss(AIBL) + labs(title = "Heatmap of Missing Values in AIBL Dataset")
+
+# View all the rows with dataset = UKBiobank 
+UKB <- data[data$dataset == "UKB", ]
+View(UKB)
+
+gg_miss_var(UKB) + ggtitle("Missing Values in Each Column of UKB Dataset")
+vis_miss(UKB) + labs(title = "Heatmap of Missing Values in UKB Dataset")
+
+# View all the rows with conv = 0 
+nonconvertors <- data[data$conv == 0, ]
+View(nonconvertors)
+
+gg_miss_var(nonconvertors) + ggtitle("Missing Values in Each Column of nonconvertors Dataset")
+vis_miss(nonconvertors) + labs(title = "Heatmap of Missing Values in nonconvertors Dataset")
+
+# View all the rows with conv = 1 
+convertors <- data[data$conv == 1, ]
+View(convertors)
+
+gg_miss_var(convertors) + ggtitle("Missing Values in Each Column of convertors Dataset")
+vis_miss(convertors) + labs(title = "Heatmap of Missing Values in convertors Dataset")
+```
+
+```{r}
+
+# get rid of the columns FH_na and conv_fh
+```
+
+## SNP FILE
+
+```{r}
+
+snpfile <- readRDS("ukb_adni_genotypes_58_snps.RDS")
+
+View(snpfile)
+```
+
+```{r}
+
+#get all column names for snpfile
+# column_names <- names(snpfile)[1:52]
+# print(column_names)
+# 
+# pcacol_names <- names(snpfile)[53:62]
+# print(pcacol_names)
+
+# Specify columns 53 to 62 and additional columns by name
+selected_columns <- c(53:62, which(names(snpfile) %in% c("FH", "SEX", "AGE", "APOE4", "conv")))
+
+# Subset the data frame to include these columns
+data_subset <- snpfile[, ..selected_columns]
+
+# Check the column names of the subset
+print(names(data_subset))
+
+
+# Fit a logistic regression model
+model <- glm(conv ~ ., data = data_subset, family = binomial)
+
+# Evaluate model
+summary(model)
+
+# Load necessary libraries
+library(pROC)
+library(caret)
+library(broom)
+library(ggplot2)
+
+pca 
+# Predict probabilities
+prob <- predict(model, type = "response")
+
+# Plot residuals vs fitted values
+plot(fitted(model), residuals(model), main = "Residuals vs Fitted", xlab = "Fitted Values", ylab = "Residuals")
+abline(h = 0, col = "red")
+
+# ROC curve
+roc_curve <- roc(data_subset$conv, prob)
+plot(roc_curve, main = "ROC Curve")
+
+# Confusion matrix
+predicted_classes <- ifelse(prob > 0.5, 1, 0)
+conf_matrix <- confusionMatrix(as.factor(predicted_classes), as.factor(data_subset$conv))
+print(conf_matrix)
+```
+
+```{r}
+
+
+#get all column names for snpfile
+# column_names <- names(snpfile)[1:52]
+# print(column_names)
+# 
+# pcacol_names <- names(snpfile)[53:62]
+# print(pcacol_names)
+
+# Specify columns 53 to 62 and additional columns by name
+selected_columns2 <- c(1:52, which(names(snpfile) %in% c("FH", "SEX", "AGE", "APOE4", "conv")))
+
+# Subset the data frame to include these columns
+data_subset2 <- snpfile[, ..selected_columns2]
+
+# Check the column names of the subset
+print(names(data_subset2))
+
+
+# Fit a logistic regression model
+model2 <- glm(conv ~ ., data = data_subset2, family = binomial)
+
+# Evaluate model
+summary(model2)
+
+# Load necessary libraries
+library(pROC)
+library(caret)
+library(broom)
+library(ggplot2)
+
+
+# Predict probabilities
+prob <- predict(model2, type = "response")
+
+# Plot residuals vs fitted values
+plot(fitted(model2), residuals(model2), main = "Residuals vs Fitted", xlab = "Fitted Values", ylab = "Residuals")
+abline(h = 0, col = "red")
+
+# ROC curve
+roc_curve <- roc(data_subset2$conv, prob)
+plot(roc_curve, main = "ROC Curve")
+
+# Confusion matrix
+predicted_classes <- ifelse(prob > 0.5, 1, 0)
+conf_matrix2 <- confusionMatrix(as.factor(predicted_classes), as.factor(data_subset2$conv))
+print(conf_matrix2)
+```
+
+```{r}
+
+# Pass in a predicted yp value and a set of genotypes with attached covariates
+# and return a set of linear model summary statistics
+
+computeSumStats <- function(yp, geno_covar) {
+  #colnames(raw_plink) <- gsub("_.*", "", colnames(raw_plink))
+  rss = colnames(geno_covar)[grepl('^rs', colnames(geno_covar))]
+  sumstats = pbsapply(rss, \(rs) {
+    m<-lm(as.formula(str_c(yp, " ~ .")), 
+          data=geno_covar %>% select(-one_of(setdiff(rss, rs)))  %>% select( -geno_batch))
+      m %>% summary() %>% coef() %>% as.data.frame() %>% filter(grepl("^rs", rownames(.))) 
+    
+  }, simplify = F, USE.NAMES = T) %>% 
+  bind_rows() %>% magrittr::set_colnames(c('Est', 'SE', 't', 'P')) %>% 
+   rownames_to_column('rs')
+}
+
+computeSumStats
+```
