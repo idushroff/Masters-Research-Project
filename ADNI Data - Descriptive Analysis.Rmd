@@ -230,6 +230,10 @@ IGNORE THE missing values for the DX.bl for now as it is already captured in the
 
 ### Table 01
 
+**For Progressors I** filter out participants who were diagnosed with Alzheimer's disease (AD) during their first visit (`VISCODE != 0`). I then select the first instance of an AD diagnosis for each participant. This ensures that only those with at least two visits (one where they were not diagnosed with AD and another where they were) are included.
+
+**For Non-Progressors** I filter participants who were never diagnosed with AD (`!any(DX == "AD")`) and have more than one visit (`n() > 1`). This ensures that non-progressors must have at least two visits to be included in the analysis.
+
 ```{r}
 
 # prune the adni3 dataset to only have the columns we want in our table01
@@ -770,35 +774,7 @@ survdiff(Surv(VISCODE, event) ~ PTGENDER, data=surv_df)
 
 ```
 
-```{r}
-# fitting a cox model 
-
-adni.cox <- coxph(Surv(VISCODE, event) ~ PTGENDER + AGE + APOE4 + MMSE + mPACCtrailsB + fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad, data=surv_df)
-summary(adni.cox)
-
-# coef = log hazards ratio
-# exp(coef) = similar interpretation to odds ratios
-```
-
-```{r}
-
-# we can tidy() the coxph() results and store them in a tibble data.frame
-adni.cox.tibble <- tidy(adni.cox, exponentiate = T, conf.int = T)
-adni.cox.tibble # display table
-
-# doing this (storing the cox ph model results as a data.frame makes it easy to use ggplot2 to create plots of the hazard ratios and confidence intervals.)
-
-# CREATE A FOREST PLOT
-ggplot(adni.cox.tibble,
-       aes(y=term, x=estimate, xmin=conf.low, xmax=conf.high)) + 
-  geom_pointrange() + #plots center point (x) an range (xmin, xmax)
-  geom_vline(xintercept=1, color="red") + #vertical line at HR = 1
-  labs(x="hazard ratio", title="Hazard ratios and 95% CIs") +
-  theme_classic()
-  
-```
-
-\# since the hazard ratio for gender contains one it is not considered to be a satistically significant variable
+\# since the hazard ratio for contains one it is not considered to be a satistically significant variable
 
 #before hazard ratio = 1 -\> indicates factors decrease risk of AD? after = increased risk?
 
@@ -809,5 +785,82 @@ ggplot(adni.cox.tibble,
 #plot survival curve
 
 ```{r}
+# why is dad dem and mum dem not priting - coz it's exactly the same as dad and mum ad so leave those out - can double check with line of code here: 
+table(surv_df$fam_hist_dad_dem, surv_df$fam_hist_dad_ad)
+```
+
+```{r}
+
+library(survival)
+library(broom)
+library(ggplot2)
+library(dplyr)
+
+# List of variables to fit separately
+variables <- c("PTGENDER", "PTEDUCAT", "AGE", "APOE4", "MMSE", 
+               "mPACCtrailsB", "fam_hist_dad_ad", "fam_hist_mum_ad")
+
+# Initialize an empty tibble to store results
+cox_results <- tibble()
+
+# Loop over variables and fit Cox models
+for (var in variables) {
+  # Fit Cox model for each variable separately
+  formula <- as.formula(paste("Surv(VISCODE, event) ~", var))
+  cox_model <- coxph(formula, data=surv_df)
+  
+  # Tidy the results and store them in a tibble
+  cox_tibble <- tidy(cox_model, exponentiate = TRUE, conf.int = TRUE)
+  
+  # Add variable name to the results
+  cox_tibble <- cox_tibble %>% mutate(variable = var)
+  
+  # Append to the results tibble
+  cox_results <- bind_rows(cox_results, cox_tibble)
+}
+
+cox_results
+
+# Create a forest plot
+ggplot(cox_results, aes(y=variable, x=estimate, xmin=conf.low, xmax=conf.high)) + 
+  geom_pointrange() + 
+  geom_vline(xintercept=1, color="red") + 
+  labs(x="Hazard Ratio", title="Hazard Ratios and 95% CIs") +
+  theme_classic()
 
 ```
+
+**Figure 1**: Forest plot displaying the hazard ratios and 95% confidence intervals for each variable from separate Cox proportional hazards models. Variables with hazard ratios greater than 1 (e.g., AGE, APOE4) indicate an increased risk of the event, while those with hazard ratios less than 1 (e.g., MMSE, mPACCtrailsB) indicate a protective effect. The red vertical line at HR = 1 represents no effect. Confidence intervals that do not cross the red line suggest statistically significant associations.
+
+```{r}
+
+# Round the hazard ratio and confidence intervals to 3 decimal places
+cox_results_rounded <- cox_results %>%
+  mutate(estimate = round(estimate, 2),
+         conf.low = round(conf.low, 2),
+         conf.high = round(conf.high, 2)) %>%
+  select(variable, estimate, conf.low, conf.high) %>%
+  arrange(variable)
+
+# Display the rounded values
+print(cox_results_rounded)
+
+```
+
+The Cox proportional hazards models were fitted separately for each variable to assess their association with the hazard of the event (e.g., disease progression or mortality). The hazard ratios (HR) and 95% confidence intervals (CIs) for each variable are presented below:
+
+-   **AGE**: The hazard ratio of 1.02 (95% CI: 1.00--1.03) suggests that for each additional year of age, the hazard of the event increases by 2%. This result is statistically significant, as the confidence interval does not cross 1.
+
+-   **APOE4**: A hazard ratio of 2.24 (95% CI: 1.94--2.58) indicates that individuals with the APOE4 allele have more than twice the risk of the event compared to those without it. This strong positive association is statistically significant.
+
+-   **MMSE**: With a hazard ratio of 0.83 (95% CI: 0.81--0.84), higher MMSE scores, reflecting better cognitive function, are associated with a 17% decrease in the hazard of the event. This protective effect is highly significant.
+
+-   **PTEDUCAT**: The hazard ratio of 0.96 (95% CI: 0.93--0.99) suggests that higher education levels slightly decrease the hazard of the event by 4%, and this result is statistically significant.
+
+-   **PTGENDER**: The hazard ratio of 1.22 (95% CI: 0.99--1.50) indicates a potential 22% increase in hazard for one gender over the other, although the confidence interval narrowly crosses 1, suggesting that this result is not statistically significant.
+
+-   **fam_hist_dad_ad**: With a hazard ratio of 1.07 (95% CI: 0.77--1.48), the presence of Alzheimer's disease in the father does not show a statistically significant association with the event, as the confidence interval crosses 1.
+
+-   **fam_hist_mum_ad**: Similarly, a hazard ratio of 0.97 (95% CI: 0.77--1.22) indicates no significant association between maternal history of Alzheimer's disease and the hazard of the event.
+
+-   **mPACCtrailsB**: The hazard ratio of 0.87 (95% CI: 0.86--0.88) suggests that better performance on the mPACCtrailsB cognitive test is associated with a 13% reduction in the hazard of the event. This protective effect is statistically significant.
