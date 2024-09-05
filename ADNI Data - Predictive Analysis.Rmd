@@ -27,7 +27,7 @@ library(tidymodels)
 # library(rsample) # For resampling methods; data splitting and resampling methods, such as cross-validation and bootstrapping.
 # library(recipes) # For preprocessing and feature engineering tasks, such as data transformation and variable selection.
 # library(workflows) # Provides a framework for creating and managing modeling workflows, allowing you to define and execute a series of preprocessing, modeling, and evaluation steps in a coherent manner.
-# library(yardstick) # Install and load the yardstick package, which provides tools for evaluating models with tidy data principles.
+library(yardstick) # Install and load the yardstick package, which provides tools for evaluating models with tidy data principles.
 
 
 # Install and load the tidyverse package, which is a collection of packages for data manipulation and visualization.
@@ -326,6 +326,110 @@ final_xgb <- fit(data = train_data) %>%
   vip(geom = "point")
 ```
 
+# Surv_recipe - LOGISTIC REGRESSION Model Tuning
+
+```{r}
+
+# Import preprocessed data 
+surv_df <- read.csv("preprocessed_data.csv") #survival_dataframe 
+
+# Convert the event column to a factor
+surv_df$event <- factor(surv_df$event, levels = c(0, 1), labels = c("No AD", "AD"))
+# View(surv_df)
+
+# Define a logistic regression model for classification
+logistic <- glm(event ~ ., data=surv_df, family="binomial")
+summary(logistic)
+```
+
+```{r}
+
+# Import preprocessed data 
+surv_df <- read.csv("preprocessed_data.csv")
+
+# Convert the event column to a factor
+surv_df$event <- factor(surv_df$event, levels = c(0, 1), labels = c("No AD", "AD"))
+
+# Set seed for reproducibility
+set.seed(123)
+
+# Split the data into training and testing sets
+data_split <- initial_split(surv_df, prop = 3/4, strata = event)
+train_data <- training(data_split) # Training set (75% of the data)
+test_data <- testing(data_split) # Testing set (25% of the data)
+
+# Define a recipe for preprocessing the data using familial history predictors to predict 'event'
+surv_recipe <- recipe(event ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad, data = train_data)
+
+# Define a logistic regression model for classification with regularization
+# alpha = 1 for Lasso (L1), alpha = 0 for Ridge (L2), alpha in between for Elastic Net
+glmnet_model <- logistic_reg(penalty = tune(), mixture = tune()) %>% 
+  set_engine("glmnet") %>% 
+  set_mode("classification")
+
+# Create a workflow
+glmnet_workflow <- workflow() %>%
+  add_model(glmnet_model) %>%
+  add_recipe(surv_recipe)
+
+# Define 5-fold cross-validation with 3 repeats
+cv_folds <- vfold_cv(train_data, v = 5, repeats = 3)
+
+# Define a grid for hyperparameter tuning
+# Penalty parameter (lambda) and mixture parameter (alpha)
+tune_grid <- grid_regular(penalty(range = c(-3, 0)), mixture(range = c(0, 1)), levels = 10)
+
+# Perform the hyperparameter tuning
+glmnet_tune <- tune_grid(
+  glmnet_workflow,
+  resamples = cv_folds,
+  grid = tune_grid,
+  control = control_grid(save_pred = TRUE)) # Ensure roc_auc and accuracy are functions from yardstick
+
+
+# Collect metrics
+glmnet_metrics <- collect_metrics(glmnet_tune)
+glmnet_metrics
+# Plot ROC AUC for the different penalty values
+roc_plot <- glmnet_metrics %>%
+  filter(.metric == "roc_auc") %>%
+  ggplot(aes(penalty, mean, color = as.factor(mixture))) +
+  geom_pointrange(aes(ymin = mean - std_err, ymax = mean + std_err)) +
+  labs(title = "ROC AUC vs. Penalty", x = "Penalty (log scale)", y = "ROC AUC")
+
+# Plot accuracy for the different penalty values
+accuracy_plot <- glmnet_metrics %>%
+  filter(.metric == "accuracy") %>%
+  ggplot(aes(penalty, mean, color = as.factor(mixture))) +
+  geom_pointrange(aes(ymin = mean - std_err, ymax = mean + std_err)) +
+  labs(title = "Accuracy vs. Penalty", x = "Penalty (log scale)", y = "Accuracy")
+
+print(roc_plot)
+print(accuracy_plot)
+
+# Select the best model
+best_params <- glmnet_tune %>% 
+  select_best(metric = "roc_auc")
+
+# Finalize the workflow with the best parameters
+final_glmnet_workflow <- finalize_workflow(glmnet_workflow, best_params)
+
+# Fit the final model on the entire training set
+final_glmnet_fit <- fit(final_glmnet_workflow, data = train_data)
+
+# Predict on the test set and evaluate
+test_predictions <- predict(final_glmnet_fit, test_data, type = "prob") %>%
+  bind_cols(test_data)
+
+roc_curve(test_predictions, event, .pred_AD) %>%
+  autoplot()
+
+# Calculate and print the ROC AUC on the test set
+test_results <- roc_auc(test_predictions, event, .pred_AD)
+print(test_results)
+
+```
+
 # Surv_recipe - Random Forest Model Tuning
 
 ```{r}
@@ -446,7 +550,7 @@ final_res %>% collect_predictions() %>% ggplot(aes(x=.pred_AD, fill=.pred_class)
 
 ```
 
-# SURVIVAL ANALYSIS MODEL - censored regression Weibull distribution 
+# SURVIVAL ANALYSIS MODEL - censored regression Weibull distribution
 
 ```{r}
 
@@ -573,15 +677,17 @@ table(surv_df$event)
 # 1005  380 
 ```
 
-SURVIVAL MODEL - WITHOUT SURIVIVAL TIMES / VISCODE = 0 as this may be causing the issue with the weibull distribution
+# SURVIVAL MODEL - WITHOUT SURIVIVAL TIMES / VISCODE = 0 as this may be causing the issue with the weibull distribution
 
 ```{r}
 
 # Import preprocessed data 
 surv_df <- read.csv("preprocessed_data.csv") 
 View(surv_df)
+
 # Remove rows with zero survival times
 surv_df <- surv_df %>% filter(VISCODE > 0)
+View(surv_df)
 
 # Check event encoding
 table(surv_df$event)
@@ -589,12 +695,7 @@ table(surv_df$event)
 #   0   1 
 # 954 380 
 
-# Or adjust zero survival times to a small positive value
-# surv_df <- surv_df %>% mutate(VISCODE = ifelse(VISCODE == 0, 1, VISCODE))
-
-# Check event encoding
-# table(surv_df$event)
-
+surv_rec <- recipe(diagnosis_surv ~ AGE + APOE4, data = train_data) 
 
 
 # Re-create the survival object and split the data again
@@ -658,7 +759,7 @@ collect_metrics(survreg_res) %>%
 # High Brier Score Near End: Towards the end of the evaluation period, the Brier score spikes, indicating poor predictive accuracy. This could be due to a small number of subjects remaining in the study, leading to higher uncertainty and less reliable predictions.
 ```
 
-# SURVIVAL ANALYSIS MODEL - censored regression COXPH distribution 
+# SURVIVAL ANALYSIS MODEL - censored regression COXPH distribution
 
 ```{r}
 
