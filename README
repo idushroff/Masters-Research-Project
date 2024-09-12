@@ -1,0 +1,18 @@
+Index:
+
+ADNI Data - Descriptive Analysis --> This file has all Data pre-processing, Kaplan-Mier curves and the Forest Plot
+
+
+ADNI Data V1 - Binary Classification Predictive Models  --> 
+ADNI Data V2 - Binary Classification Predictive Models  --> 
+
+
+
+ADNI Data V1 - Survival Analysis Predictive Models  --> No K-fold Cross validation 
+ADNI Data V2 - Survival Analysis Predictive Models  --> K-fold cross validation but only on training data 
+ADNI Data V3 - Survival Analysis Predictive Models  --> Repeated k-fold cross validation - so kfold cross val on the whole dataset - creating multiple train test splits
+ADNI Data V4 - Survival Analysis Predictive Models  --> same as version 3 except this time I am doing it for all the different recipes
+
+
+
+ADNI, AIBL, UK biobank data - Regression Analysis 
