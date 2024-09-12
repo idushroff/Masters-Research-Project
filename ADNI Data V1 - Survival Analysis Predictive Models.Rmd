@@ -1,10 +1,10 @@
 ---
-title: "ADNI Data - Predictive Analysis"
+title: "ADNI Data V1 - Survival Analysis Predictive Models"
 output: html_document
 date: "2023-03-29"
 ---
 
-# ADNI Data - Predictive Analysis
+# ADNI Data V1 - Survival Analysis Predictive Models - No K-fold Cross validation 
 
 ## Install and load the relevant packages
 
@@ -73,7 +73,7 @@ library(survival)
 library(doParallel)
 ```
 
-# SURVIVAL ANALYSIS MODEL 
+# SURVIVAL ANALYSIS MODEL
 
 # 1. Censored regression Weibull distribution
 
@@ -107,8 +107,6 @@ data_split <- initial_validation_split(surv_df1)
 train_data <- training(data_split)
 
 ```
-
-train_data \<- training(data_split)
 
 ```{r}
 # First, let’s pull out the training data and have a brief look at the response using a Kaplan-Meier curve.
@@ -205,8 +203,7 @@ collect_metrics(survreg_res) %>%
 
 ```
 
-Interpretation of Area under the ROC curve plot:
-The ROC curve is a measure of the model's ability to discriminate between events and non-events at the given time point.
+Interpretation of Area under the ROC curve plot: The ROC curve is a measure of the model's ability to discriminate between events and non-events at the given time point.
 
 We can discriminate between events and non-events pretty well towards the study? ???
 
@@ -295,7 +292,6 @@ coxnet_res <- tune_grid(
 
 # 
 
-
 So do any of these models perform better than the parametric survival model?
 
 ```{r}
@@ -370,7 +366,3 @@ bind_rows(brier_val, brier_test) %>%
 To finish, we can extract the fitted workflow to either predict directly on new data or deploy the model.
 
 \# see -\> <https://www.tidymodels.org/learn/statistics/survival-case-study/#data-splitting-and-resampling>
-
-```{r}
-
-```

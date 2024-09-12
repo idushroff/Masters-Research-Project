@@ -27,37 +27,8 @@ library(tidyverse)
 
 ```{r}
 
-```
-
-```{r}
-
-```
-
-```{r}
-
-```
-
-```{r}
-
-```
-
-```{r}
-
-```
-
-```{r}
-
-```
-
-```{ata <- read.csv("df_comb_ml.csv")}
-# see 
-```
-
-```{r}
-
-```
-
-```{the whole data_set}
+# Use read.csv() to load a CSV file
+data <- read.csv("df_comb_ml.csv")
 View(data)
 ```
 
@@ -146,11 +117,6 @@ View(convertors)
 
 gg_miss_var(convertors) + ggtitle("Missing Values in Each Column of convertors Dataset")
 vis_miss(convertors) + labs(title = "Heatmap of Missing Values in convertors Dataset")
-```
-
-```{r}
-
-# get rid of the columns FH_na and conv_fh???
 ```
 
 ## Regression analysis using the SNP FILE
@@ -358,38 +324,121 @@ ggplot(pca_data, aes(x = PC1, y = PC2, label = rs)) +
 
 ```{r}
 
-# Assuming your datasets are named 'data' and 'geno_covar'
 
-# First, rename the 'ID' column in the data dataset to 'FID' to match the geno_covar dataset
+# Use read.csv() to load a CSV file
+data <- read.csv("df_comb_ml.csv")
+# View(data)
+
+# load in the snp data 
+snpfile <- readRDS("ukb_adni_genotypes_58_snps_v2.RDS")
+# View(snpfile)
+
+
+# First, rename the 'ID' column in the data dataset to 'FID' to match the snpfile dataset
 data$FID <- data$ID
 
 # Merge keeping only rows with matching FID/ID
-merged_data <- merge(geno_covar, data, by = "FID")
+geno_covar <- merge(snpfile, data, by = "FID")
 
-names(merged_data)
+# names(geno_covar)
 
 
-
-# Filter rows where FH.x and FH.y are not the same
-different_rows <- merged_data[merged_data$SEX.x != merged_data$SEX.y, ]
-different_rows
-
-# Filter rows where FH.x and FH.y are not the same
-different_rows <- merged_data[merged_data$conv.x != merged_data$conv.y, ]
-different_rows
+# # Filter rows where FH.x and FH.y are not the same
+# different_rows <- geno_covar[geno_covar$SEX.x != geno_covar$SEX.y, ]
+# different_rows
+# 
+# # Filter rows where FH.x and FH.y are not the same
+# different_rows <- geno_covar[geno_covar$conv.x != geno_covar$conv.y, ]
+# different_rows
 
 # DELETE THE UNUSEFUL COLUMNS
 # Load dplyr if you haven't already
 library(dplyr)
 
 # Example: Remove specific columns using dplyr
-merged_data <- merged_data %>% select(-FH.x, -AGE.x, -Assess_center, -geno_batch, - APOE4.x, APOE4_e4e4, -SEX.x, -FH_na.x, -ID, -FH_na.x)
+geno_covar <- geno_covar %>% select(-FH.x, -AGE.x, -Assess_center, - APOE4.x, APOE4_e4e4, -SEX.x, -FH_na.x, -ID, -FH_na.x)
 
-merged_data <- merged_data %>% select(-conv.x)
+geno_covar <- geno_covar %>% select(-conv.x)
 
-View(merged_data)
+# View(geno_covar)
 ```
 
 ```{r}
-View(data)
+
+
+computeSumStats <- function(yp, geno_covar) {
+  # Identify columns starting with 'rs'
+  rss = colnames(geno_covar)[grepl('^rs', colnames(geno_covar))]
+  
+  # Compute linear model summary statistics for each SNP
+  sumstats = pbsapply(rss, \(rs) {
+    # Subset data to include the current SNP, covariates, and remove geno_batch
+    data_subset <- geno_covar %>%
+      select(all_of(rs), -geno_batch, -one_of(setdiff(rss, rs)))
+    
+    # Combine yp and data_subset, remove rows with any NAs
+    data_for_model <- data.frame(yp = yp, data_subset) %>%
+      na.omit()
+    
+    # Fit the linear model with yp as the dependent variable
+    m <- lm(yp ~ ., data = data_for_model)
+    
+    # Extract coefficients and filter for the SNP row
+    summary(m) %>%
+      coef() %>%
+      as.data.frame() %>%
+      filter(grepl("^rs", rownames(.)))
+    
+  }, simplify = F, USE.NAMES = T) %>%
+    bind_rows() %>%
+    magrittr::set_colnames(c('Est', 'SE', 't', 'P')) %>%
+    rownames_to_column('rs')
+}
+
+# Define the dependent variable 'yp' as the conversion status 'conv.y'
+yp <- geno_covar$conv.y
+
+# Test the function
+result <- computeSumStats(yp, geno_covar)
+print(result)
+
+```
+
+```{r}
+# Assuming `result` contains the output of computeSumStats with SNP names, p-values
+# We will calculate -log10 of the p-values and plot them against Family History
+
+# Step 1: Calculate -log10(p-values)
+result$log10_P <- -log10(result$P)
+
+# Step 2: Visualize the log10(p-values)
+library(ggplot2)
+
+# Scatter plot of -log10(p-values) across SNPs
+ggplot(result, aes(x = rs, y = log10_P)) +
+  geom_point() +
+  labs(title = "-log10(p-values) for SNPs",
+       x = "SNPs",
+       y = "-log10(p-values)") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1),  # Rotate SNP names if needed
+        plot.title = element_text(hjust = 0.5))
+
+```
+
+```{r}
+
+# Step 3: Create a family history comparison - assuming FH.y is binary (0 or 1)
+# Create an aggregated dataset based on family history (if available per SNP)
+
+# Example of plotting log10(P) by Family History if aggregated at the individual level
+# merged_result <- merge(result, geno_covar[, c("FID", "FH.y")], by.x = "rs", by.y = "FID")
+
+# Example scatter plot of log10(p-values) vs family history, assuming a correct merge
+ggplot(merged_result, aes(x = FH.y, y = log10_P)) +
+  geom_point() +
+  labs(title = "-log10(p-values) vs Family History",
+       x = "Family History (FH.y)",
+       y = "-log10(p-values)") +
+  theme_minimal()
+
 ```
