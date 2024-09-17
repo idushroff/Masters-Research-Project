@@ -53,9 +53,10 @@ library(doParallel)
 
 # Set up parallel processing
 registerDoParallel()
+
 ```
 
-# Censored regression - Weibull distribution
+Import dataset, Pre-process & set up cross validation
 
 ```{r}
 
@@ -77,215 +78,20 @@ surv_df1 <- surv_df %>%
 
 # Define resampling scheme: repeated k-fold cross-validation
 set.seed(403)
-repeated_folds <- vfold_cv(surv_df1, v = 5, repeats = 3) # 5-fold cross-validation
-
-# Recipe for preprocessing the data
-# surv_recipe <- recipe(diagnosis_surv ~ AGE + APOE4, data = surv_df1)
-surv_recipe <- recipe(diagnosis_surv ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad + APOE4, data = surv_df1)
-
-# surv_recipe <- recipe(diagnosis_surv ~ mPACCtrailsB + MMSE + PTEDUCAT, data = surv_df1)
-
-# Define the model: Weibull distribution survival regression
-survreg_spec <- survival_reg() %>% 
-  set_engine("survival") %>% 
-  set_mode("censored regression")
-
-# Create workflow combining the recipe and the model
-survreg_wflow <- workflow() %>% 
-  add_recipe(surv_recipe) %>% 
-  add_model(survreg_spec)
-
-# Define evaluation metrics for survival analysis
-survival_metrics <- metric_set(brier_survival_integrated, brier_survival, roc_auc_survival, concordance_survival)
-
-# Set evaluation time points for metrics
-evaluation_time_points <- seq(0, 144, 6)
-
-# Fit the model using repeated k-fold cross-validation
-survreg_res <- fit_resamples(
-  survreg_wflow,
-  resamples = repeated_folds,
-  metrics = survival_metrics,
-  eval_time = evaluation_time_points,
-  control = control_resamples(save_pred = TRUE)
-)
-
-#----------------------------------------------------------
-# Collect and review predictions
-preds <- collect_predictions(survreg_res)
-print(preds) # Print the predictions to check if they are collected
-
-# Plot the ROC AUC over time
-collect_metrics(survreg_res) %>%
-  filter(.metric == "roc_auc_survival") %>%
-  ggplot(aes(.eval_time, mean)) +
-  geom_line() +
-  labs(x = "Evaluation Time (VISCODE)", y = "Area Under the ROC Curve") +
-  ggtitle("weibull Distribution - Mean AUC ROC Curve Over Time")
-
-# Plot the Brier score over time
-collect_metrics(survreg_res) %>%
-  filter(.metric == "brier_survival") %>%
-  ggplot(aes(.eval_time, mean)) +
-  geom_line() +
-  labs(x = "Evaluation Time", y = "Brier Score") +
-  ggtitle(" Mean weibull Distribution - Mean Brier Score Over Time")
-#----------------------------------------------------------
-
-# Unnest the predictions to extract individual predictions and fold info
-preds_unnested <- survreg_res %>%
-  collect_predictions() %>%
-  unnest(.pred)
-
-# Print the unnested predictions
-print(preds_unnested)
-
-#----------------------------------------------------------
-
-# Extract metrics from the resamples object
-metrics_results <- collect_metrics(survreg_res)
-metrics_results
-
-#----------------------------------------------------------
-
-# Assuming 'metrics_results' is your data frame
-# Convert the metrics data to long format if needed
-metrics_long <- metrics_results %>%
-  pivot_longer(cols = c(mean, std_err), names_to = "metric_type", values_to = "value")
-
-# Create a line plot for Brier Score over evaluation time
-ggplot(metrics_long %>% filter(.metric == "brier_survival"), aes(x = .eval_time, y = value, color = metric_type)) +
-  geom_line() +
-  labs(title = "Brier Score Over Evaluation Time",
-       x = "Evaluation Time",
-       y = "Brier Score",
-       color = "Metric Type") +
-  theme_minimal()
-
-# Create a line plot for ROC AUC over evaluation time
-ggplot(metrics_long %>% filter(.metric == "roc_auc_survival"), aes(x = .eval_time, y = value, color = metric_type)) +
-  geom_line() +
-  labs(title = "ROC AUC Over Evaluation Time",
-       x = "Evaluation Time",
-       y = "ROC AUC",
-       color = "Metric Type") +
-  theme_minimal()
-
-
-```
-
--   **`.eval_time`**: The time points at which survival probabilities are evaluated.
-
--   **`.pred_survival`**: The predicted survival probability at each evaluation time.
-
--   **`.weight_censored`**: Weights that might be used for censored data.
-
--   **`.pred_time`**: The predicted survival time (this seems to be constant for each row).
-
--   **Brier Survival Integrated** (`brier_survival_integrated`): This metric assesses the overall prediction error by integrating the Brier score over the entire time span. It measures the mean squared difference between predicted survival probabilities and observed outcomes.
-
--   **Brier Survival** (`brier_survival`): This metric calculates the Brier score at specific time points. It measures the accuracy of probabilistic predictions by computing the mean squared error between predicted survival probabilities and actual outcomes at those time points.
-
--   **ROC AUC Survival** (`roc_auc_survival`): This metric computes the area under the receiver operating characteristic curve (AUC) for survival predictions. It evaluates the model's ability to discriminate between events and non-events over time.
-
--   **Concordance Index** (`concordance_survival`): Also known as C-index, this metric measures the concordance between predicted survival times and actual survival times. It provides an indication of how well the model ranks individuals based on their survival probabilities.
-
-# Cox prop hazards model v2
-
-```{r}
-
-# Define a penalized Cox Proportional Hazards model
-coxnet_spec <- proportional_hazards(penalty = tune()) %>% 
-  set_engine("glmnet") %>% 
-  set_mode("censored regression")
-
-# Workflow for Cox model
-coxnet_wflow <- workflow() %>% 
-  add_recipe(surv_recipe) %>% 
-  add_model(coxnet_spec)
-
-# Tuning and resampling for the penalized Cox model using repeated k-fold cross-validation
-set.seed(1)
-coxnet_res <- tune_grid(
-  coxnet_wflow,
-  resamples = repeated_folds,
-  grid = 10,
-  metrics = survival_metrics,
-  eval_time = evaluation_time_points,
-  control = control_grid(save_pred = TRUE) # Ensure predictions are saved
-)
-
-# Collect and review predictions
-preds <- collect_predictions(coxnet_res)
-print(preds) # Print the predictions to check if they are collected
-
-# Plot the ROC AUC over time
-collect_metrics(coxnet_res) %>%
-  filter(.metric == "roc_auc_survival") %>%
-  ggplot(aes(.eval_time, mean)) +
-  geom_line() +
-  labs(x = "Evaluation Time (VISCODE)", y = "Area Under the ROC Curve") +
-  ggtitle("Cox Proportional Hazards Model - AUC ROC Curve Over Time")
-
-# Plot the Brier score over time
-collect_metrics(coxnet_res) %>%
-  filter(.metric == "brier_survival") %>%
-  ggplot(aes(.eval_time, mean)) +
-  geom_line() +
-  labs(x = "Evaluation Time", y = "Brier Score") +
-  ggtitle("Cox Proportional Hazards Model - Brier Score Over Time")
-
-#----------------------------------------------------------
-
-# Unnest the predictions to extract individual predictions and fold info
-preds_unnested <- coxnet_res %>%
-  collect_predictions() %>%
-  unnest(.pred)
-
-# Print the unnested predictions
-print(preds_unnested)
-
-#----------------------------------------------------------
-
-# Extract metrics from the resamples object
-metrics_results <- collect_metrics(coxnet_res)
-metrics_results
-
-#----------------------------------------------------------
-```
-
-```{r}
-
-
-```
-
-# VERSION 4
-
-```{r}
-
-
-
-# Import preprocessed data 
-surv_df <- read.csv("preprocessed_data.csv") 
-# View(surv_df)
-
-# Remove rows with zero survival times
-surv_df <- surv_df %>% filter(VISCODE > 0)
-
-# Check event encoding
-# table(surv_df$event)
-
-# Create survival object
-surv_df1 <- surv_df %>% 
-  mutate(diagnosis_surv = Surv(VISCODE, event == "1")) %>%
-  select(diagnosis_surv, everything())
-# View(surv_df1)
-
-# Define resampling scheme: repeated k-fold cross-validation
-set.seed(403)
-repeated_folds <- vfold_cv(surv_df1, v = 5, repeats = 3) # 5-fold cross-validation
+repeated_folds <- vfold_cv(surv_df1, v = 5, repeats = 3) # 5-fold cross-validatio
 
 # colnames(surv_df1)
+```
+
+Define all the Recipies
+
+```{r}
+
+# --------------------------------------------------
+# # Recipe for preprocessing the data
+# surv_recipe <- recipe(diagnosis_surv ~ AGE + APOE4, data = surv_df1)
+# --------------------------------------------------
+
 # Different feature combos (recipes) - INDEx for myself
 # recipe_1 = Family History 
 # recipe_2 = Family History + APOE4  
@@ -301,25 +107,22 @@ repeated_folds <- vfold_cv(surv_df1, v = 5, repeats = 3) # 5-fold cross-validati
 # recipe_12 = APOE4 + Age 
 # recipe_13 = APOE4
 
-# Recipe for preprocessing the data
-surv_recipe <- recipe(diagnosis_surv ~ AGE + APOE4, data = surv_df1)
-
 # List of different recipes based on the specified feature combinations
 recipes_list <- list(
-  recipe_1 = recipe(diagnosis_surv ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad, data = surv_df1))
-  # recipe_2 = recipe(diagnosis_surv ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad + APOE4, data = surv_df1),
-  # recipe_3 = recipe(diagnosis_surv ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad + APOE4 + AGE, data = surv_df1),
-  # recipe_4 = recipe(diagnosis_surv ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad + APOE4 + AGE + PTGENDER, data = surv_df1),
-  # recipe_5 = recipe(diagnosis_surv ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad + APOE4 + AGE + PTGENDER + MMSE, data = surv_df1),
-  # recipe_6 = recipe(diagnosis_surv ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad + APOE4 + AGE + PTGENDER + MMSE + mPACCtrailsB, data = surv_df1),
-  # recipe_7 = recipe(diagnosis_surv ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad + APOE4 + AGE + PTGENDER + MMSE + mPACCtrailsB + PTEDUCAT, data = surv_df1),
-  # recipe_8 = recipe(diagnosis_surv ~ APOE4 + AGE + PTGENDER + MMSE + mPACCtrailsB + PTEDUCAT, data = surv_df1),
-  # recipe_9 = recipe(diagnosis_surv ~ APOE4 + AGE + PTGENDER + MMSE + mPACCtrailsB, data = surv_df1),
-  # recipe_10 = recipe(diagnosis_surv ~ APOE4 + AGE + PTGENDER + MMSE, data = surv_df1),
-  # recipe_11 = recipe(diagnosis_surv ~ APOE4 + AGE + PTGENDER, data = surv_df1),
-  # recipe_12 = recipe(diagnosis_surv ~ APOE4 + AGE, data = surv_df1),
-  # recipe_13 = recipe(diagnosis_surv ~ APOE4, data = surv_df1)
-# )
+# recipe_1 = recipe(diagnosis_surv ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad, data = surv_df1),
+# recipe_2 = recipe(diagnosis_surv ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad + APOE4, data = surv_df1),
+# recipe_3 = recipe(diagnosis_surv ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad + APOE4 + AGE, data = surv_df1),
+# recipe_4 = recipe(diagnosis_surv ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad + APOE4 + AGE + PTGENDER, data = surv_df1),
+# recipe_5 = recipe(diagnosis_surv ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad + APOE4 + AGE + PTGENDER + MMSE, data = surv_df1),
+# recipe_6 = recipe(diagnosis_surv ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad + APOE4 + AGE + PTGENDER + MMSE + mPACCtrailsB, data = surv_df1),
+# recipe_7 = recipe(diagnosis_surv ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad + APOE4 + AGE + PTGENDER + MMSE + mPACCtrailsB + PTEDUCAT, data = surv_df1),
+# recipe_8 = recipe(diagnosis_surv ~ APOE4 + AGE + PTGENDER + MMSE + mPACCtrailsB + PTEDUCAT, data = surv_df1),
+# recipe_9 = recipe(diagnosis_surv ~ APOE4 + AGE + PTGENDER + MMSE + mPACCtrailsB, data = surv_df1),
+recipe_10 = recipe(diagnosis_surv ~ APOE4 + AGE + PTGENDER + MMSE, data = surv_df1),
+recipe_11 = recipe(diagnosis_surv ~ APOE4 + AGE + PTGENDER, data = surv_df1),
+recipe_12 = recipe(diagnosis_surv ~ APOE4 + AGE, data = surv_df1)
+# recipe_13 = recipe(diagnosis_surv ~ APOE4, data = surv_df1)
+)
 
 
 # Initialize list to store results for each recipe and model
@@ -337,13 +140,13 @@ for (i in seq_along(recipes_list)) {
     add_model(survival_reg() %>% set_engine("survival") %>% set_mode("censored regression"))
   
   # Cox Proportional Hazards Model
-  coxnet_wflow <- workflow() %>% 
-    add_recipe(current_recipe) %>% 
+  coxnet_wflow <- workflow() %>%
+    add_recipe(current_recipe) %>%
     add_model(proportional_hazards(penalty = tune()) %>% set_engine("glmnet") %>% set_mode("censored regression"))
-  
+
   # Random Forest Model
-  oblique_wflow <- workflow() %>% 
-    add_recipe(current_recipe) %>% 
+  oblique_wflow <- workflow() %>%
+    add_recipe(current_recipe) %>%
     add_model(rand_forest(mtry = tune(), min_n = tune()) %>% set_engine("aorsf") %>% set_mode("censored regression"))
   
   # Cross-validation resampling (for all models)
@@ -359,10 +162,6 @@ for (i in seq_along(recipes_list)) {
 }
 
 # Access results using results_list[['Recipe_1_Weibull']], etc.
-
-```
-
-```{r}
 # Function to extract and prepare metrics for plotting
 prepare_plot_data <- function(result, model_name, recipe_name) {
   collect_metrics(result) %>%
@@ -387,37 +186,4 @@ ggplot(all_metrics, aes(x = recipe, y = mean, fill = model)) +
   facet_wrap(~.metric, scales = "free_y") +
   labs(title = "Model Comparison Across Recipes", x = "Recipe", y = "Metric Value") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
-
-```
-
-```{r}
-# Recipe for preprocessing the data
-surv_recipe <- recipe(diagnosis_surv ~ AGE + APOE4, data = surv_df1)
-
-
-# Define the model: Weibull distribution survival regression
-survreg_spec <- survival_reg() %>% 
-  set_engine("survival") %>% 
-  set_mode("censored regression")
-
-# Create workflow combining the recipe and the model
-survreg_wflow <- workflow() %>% 
-  add_recipe(surv_recipe) %>% 
-  add_model(survreg_spec)
-
-# Define evaluation metrics for survival analysis
-survival_metrics <- metric_set(brier_survival_integrated, brier_survival, roc_auc_survival, concordance_survival)
-
-# Set evaluation time points for metrics
-evaluation_time_points <- seq(0, 144, 6)
-
-# Fit the model using repeated k-fold cross-validation
-survreg_res <- fit_resamples(
-  survreg_wflow,
-  resamples = repeated_folds,
-  metrics = survival_metrics,
-  eval_time = evaluation_time_points,
-  control = control_resamples(save_pred = TRUE)
-)
-
 ```
