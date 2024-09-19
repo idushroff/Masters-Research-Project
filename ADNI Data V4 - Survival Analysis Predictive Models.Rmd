@@ -62,7 +62,7 @@ Import dataset, Pre-process & set up cross validation
 
 # Import preprocessed data 
 surv_df <- read.csv("preprocessed_data.csv") 
-View(surv_df)
+#View(surv_df)
 
 # Remove rows with zero survival times
 surv_df <- surv_df %>% filter(VISCODE > 0)
@@ -78,49 +78,29 @@ surv_df1 <- surv_df %>%
 
 # Define resampling scheme: repeated k-fold cross-validation
 set.seed(403)
-repeated_folds <- vfold_cv(surv_df1, v = 5, repeats = 3) # 5-fold cross-validatio
+repeated_folds <- vfold_cv(surv_df1, v = 5, repeats = 3) # 5-fold cross-validation
 
 # colnames(surv_df1)
 ```
 
-Define all the Recipies
+Define all the Recipes
 
 ```{r}
 
-# --------------------------------------------------
-# # Recipe for preprocessing the data
-# surv_recipe <- recipe(diagnosis_surv ~ AGE + APOE4, data = surv_df1)
-# --------------------------------------------------
-
-# Different feature combos (recipes) - INDEx for myself
-# recipe_1 = Family History 
-# recipe_2 = Family History + APOE4  
-# recipe_3 = Family History + APOE4 + Age
-# recipe_4 = Family History + APOE4 + Age + Sex 
-# recipe_5 = Family History + APOE4 + Age + Sex + MMSE 
-# recipe_6 = Family History + APOE4 + Age + Sex + MMSE + mPACCtrailsB 
-# recipe_7 = Family History + APOE4 + Age + Sex + MMSE + mPACCtrailsB + PTEDUCAT
-# recipe_8 = APOE4 + Age + Sex + MMSE + mPACCtrailsB + PTEDUCAT
-# recipe_9 = APOE4 + Age + Sex + MMSE + mPACCtrailsB 
-# recipe_10 = APOE4 + Age + Sex + MMSE 
-# recipe_11 = APOE4 + Age + Sex 
-# recipe_12 = APOE4 + Age 
-# recipe_13 = APOE4
-
 # List of different recipes based on the specified feature combinations
 recipes_list <- list(
-# recipe_1 = recipe(diagnosis_surv ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad, data = surv_df1),
+recipe_1 = recipe(diagnosis_surv ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad, data = surv_df1),
 # recipe_2 = recipe(diagnosis_surv ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad + APOE4, data = surv_df1),
-# recipe_3 = recipe(diagnosis_surv ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad + APOE4 + AGE, data = surv_df1),
+recipe_3 = recipe(diagnosis_surv ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad + APOE4 + AGE, data = surv_df1)
 # recipe_4 = recipe(diagnosis_surv ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad + APOE4 + AGE + PTGENDER, data = surv_df1),
 # recipe_5 = recipe(diagnosis_surv ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad + APOE4 + AGE + PTGENDER + MMSE, data = surv_df1),
 # recipe_6 = recipe(diagnosis_surv ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad + APOE4 + AGE + PTGENDER + MMSE + mPACCtrailsB, data = surv_df1),
 # recipe_7 = recipe(diagnosis_surv ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad + APOE4 + AGE + PTGENDER + MMSE + mPACCtrailsB + PTEDUCAT, data = surv_df1),
 # recipe_8 = recipe(diagnosis_surv ~ APOE4 + AGE + PTGENDER + MMSE + mPACCtrailsB + PTEDUCAT, data = surv_df1),
 # recipe_9 = recipe(diagnosis_surv ~ APOE4 + AGE + PTGENDER + MMSE + mPACCtrailsB, data = surv_df1),
-recipe_10 = recipe(diagnosis_surv ~ APOE4 + AGE + PTGENDER + MMSE, data = surv_df1),
-recipe_11 = recipe(diagnosis_surv ~ APOE4 + AGE + PTGENDER, data = surv_df1),
-recipe_12 = recipe(diagnosis_surv ~ APOE4 + AGE, data = surv_df1)
+# recipe_10 = recipe(diagnosis_surv ~ APOE4 + AGE + PTGENDER + MMSE, data = surv_df1),
+# recipe_11 = recipe(diagnosis_surv ~ APOE4 + AGE + PTGENDER, data = surv_df1),
+# recipe_12 = recipe(diagnosis_surv ~ APOE4 + AGE, data = surv_df1)
 # recipe_13 = recipe(diagnosis_surv ~ APOE4, data = surv_df1)
 )
 
@@ -149,6 +129,12 @@ for (i in seq_along(recipes_list)) {
     add_recipe(current_recipe) %>%
     add_model(rand_forest(mtry = tune(), min_n = tune()) %>% set_engine("aorsf") %>% set_mode("censored regression"))
   
+  # Define evaluation metrics for survival analysis
+  survival_metrics <- metric_set(brier_survival_integrated, brier_survival, roc_auc_survival, concordance_survival)
+  
+  # Set evaluation time points for metrics
+  evaluation_time_points <- seq(0, 144, 6)
+
   # Cross-validation resampling (for all models)
   set.seed(1)
   survreg_res <- fit_resamples(survreg_wflow, resamples = repeated_folds, metrics = survival_metrics, eval_time = evaluation_time_points, control = control_resamples(save_pred = TRUE))
@@ -187,3 +173,35 @@ ggplot(all_metrics, aes(x = recipe, y = mean, fill = model)) +
   labs(title = "Model Comparison Across Recipes", x = "Recipe", y = "Metric Value") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
+
+-   Recipe 1 (with all covariates: APOE4 + AGE + PTGENDER + MMSE) has more
+    variability in model performance, especially for Cox
+
+-   Recipes 2 and 3 (with fewer covariates) tend to show more stable and often better
+    performance, particularly for the RandomForest and Weibull models
+
+    Notes:
+
+-   **Brier Survival** (Top left): This metric evaluates the accuracy of survival
+    probability predictions. Lower values indicate better model performance.
+    In this plot, we see the Cox model (red) has more variability in some
+    recipes, while the RandomForest and Weibull models (green, blue) show less
+    variation and seem to perform more consistently across recipes.
+
+-   **Brier Survival Integrated** (Top right): This integrated Brier score is
+    similar to the Brier survival score but integrates over time. Again, a
+    lower value indicates better performance. In Recipe 1, the Cox model
+    performs worse than the other two models, but the performance gap reduces
+    in Recipes 2 and 3.
+
+-   **Concordance Survival** (Bottom left): Concordance is used to evaluate the
+    discriminative ability of the models. It ranges from 0.5 (random guessing)
+    to 1 (perfect prediction). The Cox model shows the most variability in
+    Recipe 1 but stabilizes in the other recipes. RandomForest and Weibull
+    models have relatively stable concordance across recipes.
+
+-   **ROC- AUC Survival** (Bottom right): This metric measures the area under the
+    receiver operating characteristic curve. Higher values (closer to 1)
+    indicate better model performance. The RandomForest and Weibull models
+    perform similarly, while the Cox model has higher variability and performs
+    worse, especially in Recipe 1.
