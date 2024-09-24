@@ -174,34 +174,19 @@ ggplot(all_metrics, aes(x = recipe, y = mean, fill = model)) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
 
--   Recipe 1 (with all covariates: APOE4 + AGE + PTGENDER + MMSE) has more
-    variability in model performance, especially for Cox
+-   Recipe 1 (with all covariates: APOE4 + AGE + PTGENDER + MMSE) has more variability in model performance, especially for Cox
 
--   Recipes 2 and 3 (with fewer covariates) tend to show more stable and often better
-    performance, particularly for the RandomForest and Weibull models
+-   Recipes 2 and 3 (with fewer covariates) tend to show more stable and often better performance, particularly for the RandomForest and Weibull models
 
     Notes:
 
--   **Brier Survival** (Top left): This metric evaluates the accuracy of survival
-    probability predictions. Lower values indicate better model performance.
-    In this plot, we see the Cox model (red) has more variability in some
-    recipes, while the RandomForest and Weibull models (green, blue) show less
-    variation and seem to perform more consistently across recipes.
+-   **Brier Survival** (Top left): This metric evaluates the accuracy of survival probability predictions. Lower values indicate better model performance. In this plot, we see the Cox model (red) has more variability in some recipes, while the RandomForest and Weibull models (green, blue) show less variation and seem to perform more consistently across recipes.
 
--   **Brier Survival Integrated** (Top right): This integrated Brier score is
-    similar to the Brier survival score but integrates over time. Again, a
-    lower value indicates better performance. In Recipe 1, the Cox model
-    performs worse than the other two models, but the performance gap reduces
-    in Recipes 2 and 3.
+-   **Brier Survival Integrated** (Top right): This integrated Brier score is similar to the Brier survival score but integrates over time. Again, a lower value indicates better performance. In Recipe 1, the Cox model performs worse than the other two models, but the performance gap reduces in Recipes 2 and 3.
 
--   **Concordance Survival** (Bottom left): Concordance is used to evaluate the
-    discriminative ability of the models. It ranges from 0.5 (random guessing)
-    to 1 (perfect prediction). The Cox model shows the most variability in
-    Recipe 1 but stabilizes in the other recipes. RandomForest and Weibull
-    models have relatively stable concordance across recipes.
+-   **Concordance Survival** (Bottom left): Concordance is used to evaluate the discriminative ability of the models. It ranges from 0.5 (random guessing) to 1 (perfect prediction). The Cox model shows the most variability in Recipe 1 but stabilizes in the other recipes. RandomForest and Weibull models have relatively stable concordance across recipes.
 
--   **ROC- AUC Survival** (Bottom right): This metric measures the area under the
-    receiver operating characteristic curve. Higher values (closer to 1)
-    indicate better model performance. The RandomForest and Weibull models
-    perform similarly, while the Cox model has higher variability and performs
-    worse, especially in Recipe 1.
+-   **ROC- AUC Survival** (Bottom right): This metric measures the area under the receiver operating characteristic curve. Higher values (closer to 1) indicate better model performance. The RandomForest and Weibull models perform similarly, while the Cox model has higher variability and performs worse, especially in Recipe 1.
+
+```{}
+```

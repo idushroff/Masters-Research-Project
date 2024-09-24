@@ -360,7 +360,7 @@ geno_covar <- geno_covar %>% select(-FH.x, -AGE.x, -Assess_center, - APOE4.x, AP
 
 geno_covar <- geno_covar %>% select(-conv.x)
 
-# View(geno_covar)
+View(geno_covar)
 ```
 
 ```{r}

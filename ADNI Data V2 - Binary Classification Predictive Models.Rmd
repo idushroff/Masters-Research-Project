@@ -4,408 +4,587 @@ output: html_document
 date: "2023-03-29"
 ---
 
-# ADNI Data V2 - Binary Classification Predictive Models
+# ADNI Data Version 2 - Binary Classification Predictive Models - streamlining the code and implementing k-fold cross validation so we have multiple train test splits and we do this in one go for all the different recipies
 
 ## Install and load the relevant packages
 
 ```{r}
 
-# Install and load the caret package, which provides a set of functions for training and plotting classification and regression models.
 # install.packages("caret")
 library(caret)
 
-
-# Install and load the ranger package, which provides an efficient implementation of random forests.
 # install.packages("ranger")
 library(ranger)
 
-# Install and load the tidymodels package, which provides a framework for modeling and machine learning.
 # install.packages("tidymodels")
 library(tidymodels)
 
-# library(parsnip) # Install the parsnip package, for modeling. Useful because it provides a consistent interface to many different types of models.
-# library(rsample) # For resampling methods; data splitting and resampling methods, such as cross-validation and bootstrapping.
-# library(recipes) # For preprocessing and feature engineering tasks, such as data transformation and variable selection.
-# library(workflows) # Provides a framework for creating and managing modeling workflows, allowing you to define and execute a series of preprocessing, modeling, and evaluation steps in a coherent manner.
-# library(yardstick) # Install and load the yardstick package, which provides tools for evaluating models with tidy data principles.
-
-
-# Install and load the tidyverse package, which is a collection of packages for data manipulation and visualization.
 # install.packages("tidyverse")
 library(tidyverse)
 
-# readr: For reading CSV files
-# dplyr: For data manipulation
-# ggplot2:For plots and graphs
-# tidyr: For tidying and reshaping data into a tidy format.
-# purrr: For functional programming and working with lists and vectors.
-# tibble: For creating and working with modern data frames.
-# stringr: For string manipulation and text processing.
-# forcats: For working with categorical data and factors.
-# lubridate: For working with dates and times.
-# magrittr: For creating expressive pipelines using the pipe operator %>%.
-# rlang: For advanced manipulation and programming with R expressions.
-
-
-# This package implements the elastic net regularization method for fitting generalized linear models (GLMs) and Cox proportional hazards models. Elastic net is a regularization technique that combines both L1 (lasso) and L2 (ridge) penalties to overcome some of the limitations of these individual methods, particularly in high-dimensional data settings. It's widely used for feature selection and regularization in regression and survival analysis.
 # install.packages("glmnet")
 library(glmnet)
 
-# This package provides functions for creating synthetic datasets for modeling and simulation purposes. Synthetic datasets are artificially generated data that mimic the characteristics of real-world data. They are useful for testing models, evaluating algorithms, and conducting sensitivity analyses without relying on actual data, which may be limited or sensitive.
 # install.packages("modeldatatoo")
 library(modeldatatoo)
 
-# This package stands for "Adaptive Orthogonal Random Survival Forests". It provides tools for building survival models using random forests with the adaptive orthogonal direction method. Random forests are an ensemble learning method for classification, regression, and survival analysis, and this package offers enhancements specifically for survival analysis.
 # install.packages("aorsf")
 library(aorsf)
 
-# This package provides functions for analyzing survival data with censoring. Survival analysis deals with time-to-event data, where the "event" of interest could be death, failure, or any other predefined endpoint. Censoring occurs when the event of interest is not observed for some subjects within the study period. This package offers various methods and tools for handling censored survival data.
 # install.packages("censored")
 library(censored)
 
-
-# Install packages for plotting survival analysis curves
 # install.packages("survival")
 library(survival)
 
-# For parallel processing
 # install.packages("doParallel")
 library(doParallel)
+
+library(dplyr)
+
+library(ggplot2)
 ```
 
-## Building and Evaluating Predictive Models using the Tidymodels
-
-# Import the preprocessed dataset and split into training and testing sets:
+TUNED AND UNTUNED
 
 ```{r}
 
 # Import preprocessed data 
-surv_df <- read.csv("preprocessed_data.csv") #survival_dataframe 
+surv_df <- read.csv("preprocessed_data.csv")
 
 # Convert the event column to a factor
 surv_df$event <- factor(surv_df$event, levels = c(0, 1), labels = c("No AD", "AD"))
-# View(surv_df)
+
+# Convert PTGENDER to numeric (0 for Male, 1 for Female)
+surv_df <- surv_df %>%
+  mutate(PTGENDER = ifelse(PTGENDER == "Male", 0, 1))
 
 # Set seed for reproducibility
 set.seed(123)
 
-# Split the data into training and testing sets
+# Define resampling scheme: repeated k-fold cross-validation
+cv_folds <- vfold_cv(surv_df, v = 5, repeats = 3)
 
-library(caTools)
+# List of different recipes based on specified feature combinations
+recipes_list <- list(
+  recipe_10 = recipe(event ~ APOE4 + AGE + PTGENDER + MMSE, data = surv_df),
+  recipe_11 = recipe(event ~ APOE4 + AGE + PTGENDER, data = surv_df),
+  recipe_12 = recipe(event ~ APOE4 + AGE, data = surv_df)
+)
 
-data_split <- sample.split(surv_df$event, SplitRatio=0.75)
-train_data <- subset(surv_df, data_split == TRUE) 
-test_data <- subset(surv_df, data_split == FALSE)
+# Initialize list to store results for each recipe and model
+results_list <- list()
+
+# Iterate through recipes and run models for each
+for (i in seq_along(recipes_list)) {
+  current_recipe <- recipes_list[[i]]
+  
+  # Define models
+  # Logistic Regression
+  glm_wflow <- workflow() %>% 
+    add_recipe(current_recipe) %>% 
+    add_model(logistic_reg() %>% 
+                set_engine("glm") %>% 
+                set_mode("classification"))
+  
+  # Tuned Random Forest
+  rf_tuned_wflow <- workflow() %>%
+    add_recipe(current_recipe) %>%
+    add_model(rand_forest(trees = 1000, #1000 trees in the forest
+                          mtry = tune(), #No. of features to consider at each split
+                          min_n = tune()) %>% #Min no. of data points in a leaf node
+                set_engine("ranger") %>% 
+                set_mode("classification"))
+
+  # Untuned Random Forest
+  rf_untuned_wflow <- workflow() %>%
+    add_recipe(current_recipe) %>%
+    add_model(rand_forest() %>% 
+                set_engine("ranger") %>% 
+                set_mode("classification"))
+  
+  # Tuned XGBoost
+  xgb_tuned_wflow <- workflow() %>%
+    add_recipe(current_recipe) %>%
+    add_model(boost_tree(trees = 1000, # Only have 1000 trees
+                         tree_depth = tune(), #Maximum depth of the tree
+                         loss_reduction = tune(), #Minimum loss reduction (gamma)
+                         mtry = tune(), #No. of features to consider at each split
+                         min_n = tune(), #Minimum no. of data points in a leaf node
+                         learn_rate = tune()) %>% #Learning rate (eta)
+                set_engine("xgboost") %>% 
+                set_mode("classification"))
+  
+  # Untuned XGBoost
+  xgb_untuned_wflow <- workflow() %>%
+    add_recipe(current_recipe) %>%
+    add_model(boost_tree() %>% 
+                set_engine("xgboost", objective = "binary:logistic") %>% 
+                set_mode("classification"))
+  
+  # Define evaluation metrics (only ROC AUC)
+  classification_metrics <- metric_set(roc_auc)
+
+  # Fit models
+  glm_res <- fit_resamples(glm_wflow, 
+                           resamples = cv_folds, 
+                           metrics = classification_metrics, 
+                           control = control_resamples(save_pred = TRUE))
+  
+  rf_tuned_res <- tune_grid(rf_tuned_wflow, 
+                            resamples = cv_folds, 
+                            grid = 10, 
+                            metrics = classification_metrics, 
+                            control = control_grid(save_pred = TRUE))
+
+  rf_untuned_res <- fit_resamples(rf_untuned_wflow, 
+                                  resamples = cv_folds, 
+                                  metrics = classification_metrics, 
+                                  control = control_resamples(save_pred = TRUE))
+  
+  xgb_tuned_res <- tune_grid(xgb_tuned_wflow, 
+                             resamples = cv_folds, 
+                             grid = 10, 
+                             metrics = classification_metrics, 
+                             control = control_grid(save_pred = TRUE))
+  
+  xgb_untuned_res <- fit_resamples(xgb_untuned_wflow, 
+                                   resamples = cv_folds, 
+                                   metrics = classification_metrics, 
+                                   control = control_resamples(save_pred = TRUE))
+  
+  # Store the results for each model
+  results_list[[paste0("Recipe_", i, "_Logistic")]] <- glm_res
+  results_list[[paste0("Recipe_", i, "_RF_Tuned")]] <- rf_tuned_res
+  results_list[[paste0("Recipe_", i, "_RF_Untuned")]] <- rf_untuned_res
+  results_list[[paste0("Recipe_", i, "_XGBoost_Tuned")]] <- xgb_tuned_res
+  results_list[[paste0("Recipe_", i, "_XGBoost_Untuned")]] <- xgb_untuned_res
+}
+
+# Function to extract and prepare metrics for plotting
+prepare_plot_data <- function(result, model_name, recipe_name) {
+  collect_metrics(result) %>%
+    mutate(model = model_name, recipe = recipe_name)
+}
+
+# Initialize an empty data frame to store all metrics
+all_metrics <- data.frame()
+
+# Loop through results and extract metrics for each model and recipe
+for (name in names(results_list)) {
+  model_name <- str_extract(name, "Logistic|RF_Tuned|RF_Untuned|XGBoost_Tuned|XGBoost_Untuned")
+  recipe_name <- str_extract(name, "Recipe_\\d+")
+  
+  metrics_data <- prepare_plot_data(results_list[[name]], model_name, recipe_name)
+  all_metrics <- bind_rows(all_metrics, metrics_data)
+}
+
+# Plot ROC AUC for all models and recipes
+ggplot(all_metrics, aes(x = recipe, y = mean, fill = model)) +
+  geom_boxplot() +
+  facet_wrap(~.metric, scales = "free_y") +
+  labs(title = "Model Comparison Across Recipes", x = "Recipe", y = "Metric Value") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
 
 ```
 
-# Defining the different recipes
+# DENSITY PLOTS
 
 ```{r}
+# Load necessary libraries
+library(tidyverse)
+library(tidymodels)
 
-# Define a recipe for preprocessing the data, using 'AGE' and 'APOE4' to predict 'event'
-# surv_recipe <- recipe(event ~ AGE + APOE4 , data = train_data)
+# Import preprocessed data 
+surv_df <- read.csv("preprocessed_data.csv")
 
-# Define a recipe for preprocessing the data using cognitive test scores and education level to predict 'event'
-# surv_recipe <- recipe(event ~ mPACCtrailsB + MMSE + PTEDUCAT, data = train_data)
+# Convert the event column to a factor
+surv_df$event <- factor(surv_df$event, levels = c(0, 1), labels = c("No AD", "AD"))
 
-# Define a recipe for preprocessing the data using familial history predictors to predict 'event'
-surv_recipe <- recipe(event ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad, data = train_data)
-```
+# Convert PTGENDER to numeric (0 for Male, 1 for Female)
+surv_df <- surv_df %>%
+  mutate(PTGENDER = ifelse(PTGENDER == "Male", 0, 1))
 
-# All Binary classification models - NO TUNING
+# Set seed for reproducibility
+set.seed(123)
 
-```{r}
+# Define resampling scheme: repeated k-fold cross-validation
+cv_folds <- vfold_cv(surv_df, v = 5, repeats = 3)
 
-# Define a logistic regression model for classification
-glm_model <- logistic_reg() %>% 
-  set_engine("glm") %>% 
-  set_mode("classification")
+# List of different recipes based on specified feature combinations
+recipes_list <- list(
+  recipe_10 = recipe(event ~ APOE4 + AGE + PTGENDER + MMSE, data = surv_df),
+  recipe_11 = recipe(event ~ APOE4 + AGE + PTGENDER, data = surv_df),
+  recipe_12 = recipe(event ~ APOE4 + AGE, data = surv_df)
+)
 
-# Define the Random forest model with hyperparameters set for tuning, settting engine to 'ranger' provides a fast implementation of random forests for this classification task & Set mode to 'classification' for binary outcomes
-rf_model <- rand_forest() %>% 
-  set_engine("ranger") %>% 
-  set_mode("classification")
+# Initialize list to store results for each recipe and model
+results_list <- list()
+predictions_list <- list()  # Initialize to store predictions
 
-# Define a gradient boosting model for classification
-gbm_model <- boost_tree() %>% 
-  set_engine("xgboost", objective = "binary:logistic") %>% 
-  set_mode("classification")
+# Iterate through recipes and run models for each
+for (i in seq_along(recipes_list)) {
+  current_recipe <- recipes_list[[i]]
+  
+  # Define models
+  # Logistic Regression
+  glm_wflow <- workflow() %>% 
+    add_recipe(current_recipe) %>% 
+    add_model(logistic_reg() %>% set_engine("glm") %>% set_mode("classification"))
+  
+  # Tuned Random Forest
+  rf_tuned_wflow <- workflow() %>% 
+    add_recipe(current_recipe) %>% 
+    add_model(rand_forest(trees = 1000, mtry = tune(), min_n = tune()) %>% set_engine("ranger") %>% set_mode("classification"))
 
-# Define 5-fold cross-validation with 3 repeats
-cv_folds <- vfold_cv(train_data, v=5, repeats=3)
+  # Untuned Random Forest
+  rf_untuned_wflow <- workflow() %>% 
+    add_recipe(current_recipe) %>% 
+    add_model(rand_forest() %>% set_engine("ranger") %>% set_mode("classification"))
+  
+  # Tuned XGBoost
+  xgb_tuned_wflow <- workflow() %>% 
+    add_recipe(current_recipe) %>% 
+    add_model(boost_tree(trees = 1000, tree_depth = tune(), loss_reduction = tune(), mtry = tune(), min_n = tune(), learn_rate = tune()) %>% set_engine("xgboost") %>% set_mode("classification"))
+  
+  # Untuned XGBoost
+  xgb_untuned_wflow <- workflow() %>% 
+    add_recipe(current_recipe) %>% 
+    add_model(boost_tree() %>% set_engine("xgboost", objective = "binary:logistic") %>% set_mode("classification"))
+  
+  # Define evaluation metrics (only ROC AUC)
+  classification_metrics <- metric_set(roc_auc)
 
-# Fit resamples
-logistic_res <- fit_resamples(glm_model, surv_recipe, cv_folds)
-randomForest_res <- fit_resamples(rf_model, surv_recipe, cv_folds)
-XGBoost_res <- fit_resamples(gbm_model, surv_recipe, cv_folds)
+  # Fit models and collect predictions
+  glm_res <- fit_resamples(glm_wflow, resamples = cv_folds, metrics = classification_metrics, control = control_resamples(save_pred = TRUE))
+  rf_tuned_res <- tune_grid(rf_tuned_wflow, resamples = cv_folds, grid = 10, metrics = classification_metrics, control = control_grid(save_pred = TRUE))
+  rf_untuned_res <- fit_resamples(rf_untuned_wflow, resamples = cv_folds, metrics = classification_metrics, control = control_resamples(save_pred = TRUE))
+  xgb_tuned_res <- tune_grid(xgb_tuned_wflow, resamples = cv_folds, grid = 10, metrics = classification_metrics, control = control_grid(save_pred = TRUE))
+  xgb_untuned_res <- fit_resamples(xgb_untuned_wflow, resamples = cv_folds, metrics = classification_metrics, control = control_resamples(save_pred = TRUE))
+  
+  # Store the results for each model
+  results_list[[paste0("Recipe_", i, "_Logistic")]] <- glm_res
+  results_list[[paste0("Recipe_", i, "_RF_Tuned")]] <- rf_tuned_res
+  results_list[[paste0("Recipe_", i, "_RF_Untuned")]] <- rf_untuned_res
+  results_list[[paste0("Recipe_", i, "_XGBoost_Tuned")]] <- xgb_tuned_res
+  results_list[[paste0("Recipe_", i, "_XGBoost_Untuned")]] <- xgb_untuned_res
+}
 
-# Create a tibble of model results
-model_res <- tibble(model=list(logistic_res, randomForest_res, XGBoost_res),
-       model_name = c("logistic", "randomforest", "XGBoost"))
+# Function to extract and prepare metrics for plotting
+prepare_plot_data <- function(result, model_name, recipe_name) {
+  collect_metrics(result) %>%
+    mutate(model = model_name, recipe = recipe_name)
+}
 
-# Create a helper function for collecting the metrics
-map_collect_metrics <- function(model){model %>% 
-    select(id, .metrics) %>% 
-    unnest(.metrics)}
+# Initialize an empty data frame to store all metrics
+all_metrics <- data.frame()
 
-# Apply helper function and extract the metrics
-model_res <- model_res %>% 
-  mutate(res=map(model, map_collect_metrics)) %>% 
-  select(model_name, res) %>% 
-  unnest(res)
+# Loop through results and extract metrics for each model and recipe
+for (name in names(results_list)) {
+  model_name <- str_extract(name, "Logistic|RF_Tuned|RF_Untuned|XGBoost_Tuned|XGBoost_Untuned")
+  recipe_name <- str_extract(name, "Recipe_\\d+")
+  
+  metrics_data <- prepare_plot_data(results_list[[name]], model_name, recipe_name)
+  all_metrics <- bind_rows(all_metrics, metrics_data)
+}
 
-model_res #Display the model results
+# Plot ROC AUC for all models and recipes
+ggplot(all_metrics, aes(x = recipe, y = mean, fill = model)) +
+  geom_boxplot() +
+  facet_wrap(~.metric, scales = "free_y") +
+  labs(title = "Model Comparison Across Recipes", x = "Recipe", y = "Metric Value") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
-# Plot boxplots for each metric
-plot <- model_res %>% 
-  ggplot(aes(x=model_name, y= .estimate)) +
-  geom_boxplot() + 
-  facet_wrap(~ .metric, scales="free_y")
+# Initialize an empty list to store predictions
+predictions_list <- list()
 
-plot
+# Loop through results to collect predictions for each model
+for (name in names(results_list)) {
+  # Collect predictions
+  preds <- collect_predictions(results_list[[name]]) %>%
+    mutate(model = str_extract(name, "Logistic|RF_Tuned|RF_Untuned|XGBoost_Tuned|XGBoost_Untuned"),
+           recipe = str_extract(name, "Recipe_\\d+"))
+  
+  predictions_list[[name]] <- preds
+}
 
-# Show the accuracy for each fold for each model:
-accuracy <- model_res %>% 
-  filter(.metric == "accuracy") %>% 
-  select(model_name, id, .estimate) %>% 
-  pivot_wider(names_from = "model_name", values_from = ".estimate")
+# Combine all predictions into a single data frame
+all_predictions <- bind_rows(predictions_list)
 
-accuracy
-
-# Show the roc_auc for each fold for each model:
-roc_acu <- model_res %>% 
-  filter(.metric == "roc_auc") %>% 
-  select(model_name, id, .estimate) %>% 
-  pivot_wider(names_from = "model_name", values_from = ".estimate")
-
-roc_acu
-
-# Visulaize the above:
-plot1 <- model_res %>% 
-  ggplot(aes(x=model_name, y= .estimate, color = id, group = id)) +
-  geom_line() + 
-  facet_wrap(~.metric, scales="free_y")
-
-plot1
-
-# We can see that there is not a lot of variability in the different folds. However there is quite a lot of variability between the models themselves.
-
-# What is the density of the 3 models:
-density_plot <- model_res %>% 
-  ggplot(aes(x=.estimate, color = model_name, fill = model_name)) +
-  geom_density(alpha = 0.1) + 
-  facet_wrap(~.metric, scales="free")
-
-density_plot
-
-# What are the overall metrics for these three models.
-metrics <- model_res %>% 
-  group_by(model_name, .metric) %>% 
-  summarise(mean=mean(.estimate))
-
-metrics
-```
-
-# XGBOOST Model Tuning
-
-```{r}
-
-# Define an XGBoost model with hyperparameters set for tuning
-xgb_spec <- boost_tree(trees = 1000, # Only have 1000 trees
-                        tree_depth = tune(), #Maximum depth of the tree
-                        min_n = tune(), #Minimum no. of data points in a leaf node
-                        loss_reduction = tune(), #Minimum loss reduction (gamma)
-                        sample_size = tune(), #Subsample ratio of the training data
-                        mtry = tune(), #No. of features to consider at each split
-                        learn_rate = tune()) %>% #Learning rate (eta)
-  set_engine("xgboost", objective = "binary:logistic") %>% 
-  set_mode("classification")
-
-xgb_spec 
-
-# Create a grid for hyperparameter tuning using a Latin hypercube design
-xgb_grid <- grid_latin_hypercube(tree_depth(), #Maximum depth of the tree
-                                  min_n(), #Min no. of data points in a leaf node
-                                  loss_reduction(), #Minimum loss reduction (gamma)
-                                  sample_size = sample_prop(), #Subsample ratio of the training
-                                  finalize(mtry(), train_data),
-                                  learn_rate(),
-                                  size = 20) #Generate a set of 20 combinations of these hyperparameters for the tuning process
-xgb_grid
-
-# Create a workflow combining the recipe and the XGBoost model
-xgb_wf <- workflow() %>% add_recipe(surv_recipe) %>% add_model(xgb_spec)
-
-# Define 5-fold cross-validation with 3 repeats
-cv_folds <- vfold_cv(train_data, v=5, repeats=3)
-
-# Register parallel processing to speed up computation
-doParallel::registerDoParallel()
-
-# Set seed for reproducibility in tuning
-set.seed(234)
-
-# Tune the XGBoost model using cross-validation folds and the grid of hyperparameters
-xgb_res <- tune_grid(xgb_wf, 
-                     resamples = cv_folds, 
-                     grid = xgb_grid,
-                     control = control_grid(save_pred = TRUE))
-
-# Collect and print the cross-validation results
-xgb_res
-
-# Explore the results
-collect_metrics(xgb_res)
-
-# Visualize the results, focusing on the ROC AUC metric
-# xgb_res %>%
-#   collect_metrics() %>%
-#   filter(.metric == "roc_auc") %>%
-#   select(mean, mtry:sample_size) %>%
-#   pivot_longer(mtry:sample_size,
-#                values_to = "value",
-#                names_to = "parameter"
-#   ) %>%
-#   ggplot(aes(value, mean, color = parameter)) +
-#   geom_point(alpha = 0.8, show.legend = FALSE) +
-#   facet_wrap(~parameter, scales = "free_x") +
-#   labs(x = NULL, y = "AUC")
-
-# Show the best results based on ROC AUC
-show_best(xgb_res)
-
-# Select the best hyperparameters based on ROC AUC
-best_auc <- select_best(xgb_res)
-best_auc
-
-# Finalize the workflow with the best hyperparameters
-final_xgb <- finalize_workflow(xgb_wf, best_auc)
-final_xgb
-
-# Fit the finalized model on the training set and evaluate it on the testing set
-final_res_xgb <- last_fit(final_xgb, data_split)
-
-# Collect and print the evaluation metrics
-collect_metrics(final_res_xgb)
-
-# View predictions on the testing set
-final_res_xgb %>% collect_predictions() %>% View()
-
-# Plot the ROC curve for the final model's predictions
-# final_res %>%
-#   collect_predictions() %>%
-#   mutate(pred_class_numeric = as.numeric(.pred_class)) %>%
-#   roc_curve(truth=event, pred_class_numeric) %>%
-#   ggplot(aes(x = 1 - specificity, y = sensitivity)) +
-#   geom_line(size = 1.5, color = "midnightblue") +
-#   geom_abline(
-#     lty = 2, alpha = 0.5,
-#     color = "gray50",
-#     size = 1.2)
-
-final_res_xgb %>% collect_predictions() %>% ggplot(aes(x=.pred_AD, fill=.pred_class)) + geom_density(alpha=0.5)
+# Create density plots for predicted probabilities
+ggplot(all_predictions, aes(x = .pred_AD, fill = model)) +
+  geom_density(alpha = 0.5) +
+  facet_wrap(~ recipe) + 
+  labs(title = "Density of Predicted Probabilities by Model", 
+       x = "Predicted Probability of AD", 
+       y = "Density") +
+  theme_minimal()
 
 ```
 
-# Random Forest Model Tuning
+# FAMILY HISTORY RECIPE
 
 ```{r}
+# Import preprocessed data 
+surv_df <- read.csv("preprocessed_data.csv")
 
-# Define the Random forest model with hyperparameters set for tuning, settting engine to 'ranger' provides a fast implementation of random forests for this classification task & Set mode to 'classification' for binary outcomes
+# Convert the event column to a factor
+surv_df$event <- factor(surv_df$event, levels = c(0, 1), labels = c("No AD", "AD"))
 
-# Define the Random forest model with hyperparameters set for tuning
-rf_spec <- rand_forest(trees = 1000, #1000 trees in the forest
-                       mtry = tune(), #No. of features to consider at each split
-                       min_n = tune()) %>% #Min no. of data points in a leaf node
-  set_engine("ranger") %>%
-  set_mode("classification")
+# Convert PTGENDER to numeric (0 for Male, 1 for Female)
+surv_df <- surv_df %>%
+  mutate(PTGENDER = ifelse(PTGENDER == "Male", 0, 1))
 
-# Create a grid for hyperparameter tuning using a Latin hypercube design
-rf_grid <- grid_latin_hypercube(min_n(), #Min no. of data points in a leaf node
-                                finalize(mtry(), train_data),
-                                size = 20) #Generate a set of 20 combinations of these hyperparameters for the tuning process
+# Set seed for reproducibility
+set.seed(123)
 
+# Define resampling scheme: repeated k-fold cross-validation
+cv_folds <- vfold_cv(surv_df, v = 5, repeats = 3)
 
-rf_grid
+# List of different recipes based on specified feature combinations
+recipes_list <- list(
+  recipe_1 = recipe(event ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad, data = surv_df),
+  recipe_3 = recipe(event ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad + APOE4 + AGE, data = surv_df)
+  # recipe_10 = recipe(event ~ APOE4 + AGE + PTGENDER + MMSE, data = surv_df),
+  # recipe_11 = recipe(event ~ APOE4 + AGE + PTGENDER, data = surv_df),
+  # recipe_12 = recipe(event ~ APOE4 + AGE, data = surv_df)
+)
 
-# Create a workflow combining the recipe and the XGBoost model
-rf_wf <- workflow() %>% add_recipe(surv_recipe) %>% add_model(rf_spec)
+# Initialize list to store results for each recipe and model
+results_list <- list()
 
-# Define 5-fold cross-validation with 3 repeats
-cv_folds <- vfold_cv(train_data, v=5, repeats=3)
+# Iterate through recipes and run models for each
+for (i in seq_along(recipes_list)) {
+  current_recipe <- recipes_list[[i]]
+  
+  # Define models
+  # Logistic Regression
+  glm_wflow <- workflow() %>% 
+    add_recipe(current_recipe) %>% 
+    add_model(logistic_reg() %>% 
+                set_engine("glm") %>% 
+                set_mode("classification"))
+  
+  # Tuned Random Forest
+  rf_tuned_wflow <- workflow() %>%
+    add_recipe(current_recipe) %>%
+    add_model(rand_forest(trees = 1000, #1000 trees in the forest
+                          mtry = tune(), #No. of features to consider at each split
+                          min_n = tune()) %>% #Min no. of data points in a leaf node
+                set_engine("ranger") %>% 
+                set_mode("classification"))
 
-# Register parallel processing to speed up computation
-doParallel::registerDoParallel()
+  # Untuned Random Forest
+  rf_untuned_wflow <- workflow() %>%
+    add_recipe(current_recipe) %>%
+    add_model(rand_forest() %>% 
+                set_engine("ranger") %>% 
+                set_mode("classification"))
+  
+  # Tuned XGBoost
+  xgb_tuned_wflow <- workflow() %>%
+    add_recipe(current_recipe) %>%
+    add_model(boost_tree(trees = 1000, # Only have 1000 trees
+                         tree_depth = tune(), #Maximum depth of the tree
+                         loss_reduction = tune(), #Minimum loss reduction (gamma)
+                         mtry = tune(), #No. of features to consider at each split
+                         min_n = tune(), #Minimum no. of data points in a leaf node
+                         learn_rate = tune()) %>% #Learning rate (eta)
+                set_engine("xgboost") %>% 
+                set_mode("classification"))
+  
+  # Untuned XGBoost
+  xgb_untuned_wflow <- workflow() %>%
+    add_recipe(current_recipe) %>%
+    add_model(boost_tree() %>% 
+                set_engine("xgboost", objective = "binary:logistic") %>% 
+                set_mode("classification"))
+  
+  # Define evaluation metrics (only ROC AUC)
+  classification_metrics <- metric_set(roc_auc)
 
-# Set seed for reproducibility in tuning
-set.seed(234)
+  # Fit models
+  glm_res <- fit_resamples(glm_wflow, 
+                           resamples = cv_folds, 
+                           metrics = classification_metrics, 
+                           control = control_resamples(save_pred = TRUE))
+  
+  rf_tuned_res <- tune_grid(rf_tuned_wflow, 
+                            resamples = cv_folds, 
+                            grid = 10, 
+                            metrics = classification_metrics, 
+                            control = control_grid(save_pred = TRUE))
 
-# Tune the XGBoost model using cross-validation folds and the grid of hyperparameters
-rf_res <- tune_grid(rf_wf, 
-                     resamples = cv_folds, 
-                     grid = rf_grid,
-                     control = control_grid(save_pred = TRUE))
+  rf_untuned_res <- fit_resamples(rf_untuned_wflow, 
+                                  resamples = cv_folds, 
+                                  metrics = classification_metrics, 
+                                  control = control_resamples(save_pred = TRUE))
+  
+  xgb_tuned_res <- tune_grid(xgb_tuned_wflow, 
+                             resamples = cv_folds, 
+                             grid = 10, 
+                             metrics = classification_metrics, 
+                             control = control_grid(save_pred = TRUE))
+  
+  xgb_untuned_res <- fit_resamples(xgb_untuned_wflow, 
+                                   resamples = cv_folds, 
+                                   metrics = classification_metrics, 
+                                   control = control_resamples(save_pred = TRUE))
+  
+  # Store the results for each model
+  results_list[[paste0("Recipe_", i, "_Logistic")]] <- glm_res
+  results_list[[paste0("Recipe_", i, "_RF_Tuned")]] <- rf_tuned_res
+  results_list[[paste0("Recipe_", i, "_RF_Untuned")]] <- rf_untuned_res
+  results_list[[paste0("Recipe_", i, "_XGBoost_Tuned")]] <- xgb_tuned_res
+  results_list[[paste0("Recipe_", i, "_XGBoost_Untuned")]] <- xgb_untuned_res
+}
 
-# Collect and print the cross-validation results
-rf_res
+# Function to extract and prepare metrics for plotting
+prepare_plot_data <- function(result, model_name, recipe_name) {
+  collect_metrics(result) %>%
+    mutate(model = model_name, recipe = recipe_name)
+}
 
-# Explore the results
-collect_metrics(rf_res)
+# Initialize an empty data frame to store all metrics
+all_metrics <- data.frame()
 
-# Visualize the results, focusing on the ROC AUC metric
-# rf_res %>%
-#   collect_metrics() %>%
-#   filter(.metric == "roc_auc") %>%
-#   select(mean, mtry:sample_size) %>%
-#   pivot_longer(mtry:sample_size,
-#                values_to = "value",
-#                names_to = "parameter"
-#   ) %>%
-#   ggplot(aes(value, mean, color = parameter)) +
-#   geom_point(alpha = 0.8, show.legend = FALSE) +
-#   facet_wrap(~parameter, scales = "free_x") +
-#   labs(x = NULL, y = "AUC")
+# Loop through results and extract metrics for each model and recipe
+for (name in names(results_list)) {
+  model_name <- str_extract(name, "Logistic|RF_Tuned|RF_Untuned|XGBoost_Tuned|XGBoost_Untuned")
+  recipe_name <- str_extract(name, "Recipe_\\d+")
+  
+  metrics_data <- prepare_plot_data(results_list[[name]], model_name, recipe_name)
+  all_metrics <- bind_rows(all_metrics, metrics_data)
+}
 
-# Show the best results based on ROC AUC
-show_best(rf_res)
+# Plot ROC AUC for all models and recipes
+ggplot(all_metrics, aes(x = recipe, y = mean, fill = model)) +
+  geom_boxplot() +
+  facet_wrap(~.metric, scales = "free_y") +
+  labs(title = "Model Comparison Across Recipes", x = "Recipe", y = "Metric Value") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
-# Select the best hyperparameters based on ROC AUC
-best_auc <- select_best(rf_res)
-best_auc
-
-# Finalize the workflow with the best hyperparameters
-final_rf <- finalize_workflow(rf_wf, best_auc)
-final_rf
-
-# Fit the finalized model on the training set and evaluate it on the testing set
-final_res <- last_fit(final_rf, data_split)
-
-# Collect and print the evaluation metrics
-collect_metrics(final_res)
-
-final_res %>%
-  collect_predictions()%>%
-  mutate(pred_class_numeric = 3 - as.numeric(.pred_class)) %>% View()
-
-# Plot the ROC curve for the final model's predictions
-# final_res %>%
-#   collect_predictions() %>%
-#   mutate(pred_class_numeric = 3 - as.numeric(.pred_class)) %>%
-#   roc_curve(truth=event, pred_class_numeric) %>%
-#   ggplot(aes(x = 1 - specificity, y = sensitivity)) +
-#   geom_point(size = 1.5, color = "midnightblue") +
-#   geom_abline(
-#     lty = 2, alpha = 0.5,
-#     color = "gray50",
-#     size = 1.2)
-
-final_res %>% collect_predictions() %>% ggplot(aes(x=.pred_AD, fill=.pred_class)) + geom_density(alpha=0.5)
 
 ```
 
-# Logistic Regresion Model Tuning
+# TUNED Models ONLY 
 
 ```{r}
+
+# Import preprocessed data 
+surv_df <- read.csv("preprocessed_data.csv")
+
+# Convert the event column to a factor
+surv_df$event <- factor(surv_df$event, levels = c(0, 1), labels = c("No AD", "AD"))
+
+# Convert PTGENDER to numeric (0 for Male, 1 for Female)
+surv_df <- surv_df %>%
+  mutate(PTGENDER = ifelse(PTGENDER == "Male", 0, 1))
+
+# Set seed for reproducibility
+set.seed(123)
+
+# Define resampling scheme: repeated k-fold cross-validation
+cv_folds <- vfold_cv(surv_df, v = 5, repeats = 3)
+
+# List of different recipes based on specified feature combinations
+recipes_list <- list(
+  recipe_10 = recipe(event ~ APOE4 + AGE + PTGENDER + MMSE, data = surv_df),
+  recipe_11 = recipe(event ~ APOE4 + AGE + PTGENDER, data = surv_df),
+  recipe_12 = recipe(event ~ APOE4 + AGE, data = surv_df)
+)
+
+# Initialize list to store results for each recipe and model
+results_list <- list()
+
+# Iterate through recipes and run models for each
+for (i in seq_along(recipes_list)) {
+  current_recipe <- recipes_list[[i]]
+  
+  # Define models
+  # Logistic Regression
+  glm_wflow <- workflow() %>% 
+    add_recipe(current_recipe) %>% 
+    add_model(logistic_reg() %>% 
+                set_engine("glm") %>% 
+                set_mode("classification"))
+  
+  # Tuned Random Forest
+  rf_tuned_wflow <- workflow() %>%
+    add_recipe(current_recipe) %>%
+    add_model(rand_forest(trees = 1000, #1000 trees in the forest
+                          mtry = tune(), #No. of features to consider at each split
+                          min_n = tune()) %>% #Min no. of data points in a leaf node
+                set_engine("ranger") %>% 
+                set_mode("classification"))
+
+  
+  # Tuned XGBoost
+  xgb_tuned_wflow <- workflow() %>%
+    add_recipe(current_recipe) %>%
+    add_model(boost_tree(trees = 1000, # Only have 1000 trees
+                         tree_depth = tune(), #Maximum depth of the tree
+                         loss_reduction = tune(), #Minimum loss reduction (gamma)
+                         mtry = tune(), #No. of features to consider at each split
+                         min_n = tune(), #Minimum no. of data points in a leaf node
+                         learn_rate = tune()) %>% #Learning rate (eta)
+                set_engine("xgboost") %>% 
+                set_mode("classification"))
+  
+  # Define evaluation metrics (only ROC AUC)
+  classification_metrics <- metric_set(roc_auc)
+
+  # Fit models
+  glm_res <- fit_resamples(glm_wflow, 
+                           resamples = cv_folds, 
+                           metrics = classification_metrics, 
+                           control = control_resamples(save_pred = TRUE))
+  
+  rf_tuned_res <- tune_grid(rf_tuned_wflow, 
+                            resamples = cv_folds, 
+                            grid = 10, 
+                            metrics = classification_metrics, 
+                            control = control_grid(save_pred = TRUE))
+  
+  xgb_tuned_res <- tune_grid(xgb_tuned_wflow, 
+                             resamples = cv_folds, 
+                             grid = 10, 
+                             metrics = classification_metrics, 
+                             control = control_grid(save_pred = TRUE))
+  
+  
+  # Store the results for each model
+  results_list[[paste0("Recipe_", i, "_Logistic")]] <- glm_res
+  results_list[[paste0("Recipe_", i, "_RF_Tuned")]] <- rf_tuned_res
+  results_list[[paste0("Recipe_", i, "_XGBoost_Tuned")]] <- xgb_tuned_res
+}
+
+# Function to extract and prepare metrics for plotting
+prepare_plot_data <- function(result, model_name, recipe_name) {
+  collect_metrics(result) %>%
+    mutate(model = model_name, recipe = recipe_name)
+}
+
+# Initialize an empty data frame to store all metrics
+all_metrics <- data.frame()
+
+# Loop through results and extract metrics for each model and recipe
+for (name in names(results_list)) {
+  model_name <- str_extract(name, "Logistic|RF_Tuned|RF_Untuned|XGBoost_Tuned|XGBoost_Untuned")
+  recipe_name <- str_extract(name, "Recipe_\\d+")
+  
+  metrics_data <- prepare_plot_data(results_list[[name]], model_name, recipe_name)
+  all_metrics <- bind_rows(all_metrics, metrics_data)
+}
+
+# Plot ROC AUC for all models and recipes
+ggplot(all_metrics, aes(x = recipe, y = mean, fill = model)) +
+  geom_boxplot() +
+  facet_wrap(~.metric, scales = "free_y") +
+  labs(title = "Model Comparison Across Recipes", x = "Recipe", y = "Metric Value") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
 
 ```
