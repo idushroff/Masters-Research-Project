@@ -87,22 +87,20 @@ Define all the Recipes
 
 ```{r}
 
-# List of different recipes based on the specified feature combinations
+# List of different recipes based on specified feature combinations, excluding features with 'dem'
 recipes_list <- list(
-# recipe_1 = recipe(diagnosis_surv ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad, data = surv_df1),
-# recipe_2 = recipe(diagnosis_surv ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad + APOE4, data = surv_df1),
-recipe_3 = recipe(diagnosis_surv ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad + APOE4 + AGE, data = surv_df1),
-# recipe_4 = recipe(diagnosis_surv ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad + APOE4 + AGE + PTGENDER, data = surv_df1),
-# recipe_5 = recipe(diagnosis_surv ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad + APOE4 + AGE + PTGENDER + MMSE, data = surv_df1),
-# recipe_6 = recipe(diagnosis_surv ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad + APOE4 + AGE + PTGENDER + MMSE + mPACCtrailsB, data = surv_df1),
-# recipe_7 = recipe(diagnosis_surv ~ fam_hist_dad_dem + fam_hist_dad_ad + fam_hist_mum_dem + fam_hist_mum_ad + APOE4 + AGE + PTGENDER + MMSE + mPACCtrailsB + PTEDUCAT, data = surv_df1),
-# recipe_8 = recipe(diagnosis_surv ~ APOE4 + AGE + PTGENDER + MMSE + mPACCtrailsB + PTEDUCAT, data = surv_df1),
-# recipe_9 = recipe(diagnosis_surv ~ APOE4 + AGE + PTGENDER + MMSE + mPACCtrailsB, data = surv_df1),
-# recipe_10 = recipe(diagnosis_surv ~ APOE4 + AGE + PTGENDER + MMSE, data = surv_df1),
-# recipe_11 = recipe(diagnosis_surv ~ APOE4 + AGE + PTGENDER, data = surv_df1),
-recipe_12 = recipe(diagnosis_surv ~ APOE4 + AGE, data = surv_df1)
-# recipe_13 = recipe(diagnosis_surv ~ APOE4, data = surv_df1)
+  recipe_3 = recipe(diagnosis_surv ~ fam_hist_dad_ad + fam_hist_mum_ad + APOE4 + AGE, data = surv_df1),
+  recipe_4 = recipe(diagnosis_surv ~ fam_hist_dad_ad + fam_hist_mum_ad + APOE4 + AGE + PTGENDER, data = surv_df1),
+  recipe_5 = recipe(diagnosis_surv ~ fam_hist_dad_ad + fam_hist_mum_ad + APOE4 + AGE + PTGENDER + MMSE, data = surv_df1),
+  recipe_6 = recipe(diagnosis_surv ~ fam_hist_dad_ad + fam_hist_mum_ad + APOE4 + AGE + PTGENDER + MMSE + mPACCtrailsB, data = surv_df1),
+  recipe_7 = recipe(diagnosis_surv ~ fam_hist_dad_ad + fam_hist_mum_ad + APOE4 + AGE + PTGENDER + MMSE + mPACCtrailsB + PTEDUCAT, data = surv_df1),
+  recipe_8 = recipe(diagnosis_surv ~ APOE4 + AGE + PTGENDER + MMSE + mPACCtrailsB + PTEDUCAT, data = surv_df1),
+  recipe_9 = recipe(diagnosis_surv ~ APOE4 + AGE + PTGENDER + MMSE + mPACCtrailsB, data = surv_df1),
+  recipe_10 = recipe(diagnosis_surv ~ APOE4 + AGE + PTGENDER + MMSE, data = surv_df1),
+  recipe_11 = recipe(diagnosis_surv ~ APOE4 + AGE + PTGENDER, data = surv_df1),
+  recipe_12 = recipe(diagnosis_surv ~ APOE4 + AGE, data = surv_df1)
 )
+
 
 
 # Initialize list to store results for each recipe and model
@@ -188,5 +186,6 @@ ggplot(all_metrics, aes(x = recipe, y = mean, fill = model)) +
 
 -   **ROC- AUC Survival** (Bottom right): This metric measures the area under the receiver operating characteristic curve. Higher values (closer to 1) indicate better model performance. The RandomForest and Weibull models perform similarly, while the Cox model has higher variability and performs worse, especially in Recipe 1.
 
-```{}
+```{=html}
+<!-- -->
 ```
