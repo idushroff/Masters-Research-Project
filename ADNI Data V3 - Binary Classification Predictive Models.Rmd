@@ -242,3 +242,34 @@ ggplot(summary_metrics, aes(x = recipe, y = estimate, fill = model)) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 ```
+
+```{r}
+library(ggplot2)
+library(gridExtra)
+library(grid)
+
+# Filter and prepare the data for ROC AUC
+roc_auc_metrics <- all_metrics %>%
+  filter(.metric == "roc_auc") %>%
+  group_by(recipe, model) %>%
+  summarize(estimate = list(.estimate), .groups = 'drop') %>%
+  unnest(estimate)
+
+# Create the box plot
+box_plot <- ggplot(roc_auc_metrics, aes(x = recipe, y = estimate, fill = model)) +
+  geom_boxplot() +
+  labs(title = "ROC AUC Comparison Across Recipes and Models", 
+       x = "Recipe", 
+       y = "ROC AUC Value") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_y_continuous(limits = c(0, 1))
+
+# Create a custom legend for recipes
+recipe_legend <- textGrob("Recipes:\n1. fam_hist_dad_ad + fam_hist_mum_ad\n2. fam_hist_dad_ad + fam_hist_mum_ad + APOE4 + AGE\n3. APOE4 + AGE + PTGENDER + MMSE\n4. APOE4 + AGE + PTGENDER\n5. APOE4 + AGE", 
+                           gp = gpar(fontsize = 10), 
+                           hjust = 0)
+
+# Combine the box plot and the recipe legend
+grid.arrange(box_plot, recipe_legend, ncol = 1, heights = c(3, 1))
+
+```
