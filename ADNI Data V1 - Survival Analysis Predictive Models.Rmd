@@ -4,7 +4,7 @@ output: html_document
 date: "2023-03-29"
 ---
 
-# ADNI Data V1 - Survival Analysis Predictive Models - No K-fold Cross validation 
+# ADNI Data V1 - Survival Analysis Predictive Models - No K-fold Cross validation
 
 ## Install and load the relevant packages
 

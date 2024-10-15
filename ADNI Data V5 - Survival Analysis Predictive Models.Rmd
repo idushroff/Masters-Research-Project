@@ -97,10 +97,21 @@ recipes_list <- list(
   recipe_5 = recipe(diagnosis_surv ~ APOE4 + AGE + PTGENDER + PTEDUCAT + MMSE + mPACCtrailsB, data = surv_df1)
 )
 
-
-
 # Initialize list to store results for each recipe and model
 results_list <- list()
+
+# Define tuning grid for Cox model (penalty) and Random Forest (mtry, min_n)
+cox_grid <- grid_regular(
+  penalty(range = c(0.0001, 1)), # Regularization penalty for Cox model
+  levels = 10                    # 10 values for penalty
+)
+
+rf_grid <- grid_regular(
+  mtry(range = c(2, 5)),          # Number of features considered at each split (2 to 5)
+  min_n(range = c(1, 10)),        # Minimum number of samples in a leaf (1 to 10)
+  levels = 10                     # 10 values for each hyperparameter
+)
+
 
 # Iterate through recipes and run models for each
 for (i in seq_along(recipes_list)) {
@@ -132,8 +143,8 @@ for (i in seq_along(recipes_list)) {
   # Cross-validation resampling (for all models)
   set.seed(1)
   survreg_res <- fit_resamples(survreg_wflow, resamples = repeated_folds, metrics = survival_metrics, eval_time = evaluation_time_points, control = control_resamples(save_pred = TRUE))
-  coxnet_res <- tune_grid(coxnet_wflow, resamples = repeated_folds, grid = 10, metrics = survival_metrics, eval_time = evaluation_time_points, control = control_grid(save_pred = TRUE))
-  oblique_res <- tune_grid(oblique_wflow, resamples = repeated_folds, grid = 10, metrics = survival_metrics, eval_time = evaluation_time_points, control = control_grid(save_pred = TRUE))
+  coxnet_res <- tune_grid(coxnet_wflow, resamples = repeated_folds, grid = cox_grid, metrics = survival_metrics, eval_time = evaluation_time_points, control = control_grid(save_pred = TRUE))
+  oblique_res <- tune_grid(oblique_wflow, resamples = repeated_folds, grid = rf_grid, metrics = survival_metrics, eval_time = evaluation_time_points, control = control_grid(save_pred = TRUE))
   
   # Store the results for each model
   results_list[[paste0("Recipe_", i, "_Weibull")]] <- survreg_res

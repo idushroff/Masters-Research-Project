@@ -174,8 +174,36 @@ Evaluate Imputation Quality: After imputation, assess the quality of imputed val
 
 # There are not a lot of rows with missing values for the features VISCODE, APOE4 and DX (in correlation with MMSE and trailsB score) so i decided to leave them all out 
 # remove rows where VISCODE = NA, APOE4 = NA
-adni2 <- adni1 %>% drop_na(VISCODE, DX, APOE4, MMSE, mPACCtrailsB)
+# adni2 <- adni1 %>% drop_na(VISCODE, DX, APOE4, MMSE, mPACCtrailsB)
+adni1 <- adni_data
+
+adni2 <- adni1 %>% drop_na(MMSE, mPACCtrailsB)
+
 # View(adni2)
+
+print('cog test missing')
+length(unique(adni2$RID))
+
+# ----------------------------------------
+
+adni3 <- adni2 %>% drop_na(APOE4)
+length(unique(adni3$RID))
+
+
+# ----------------------------------------
+
+
+adni4 <- adni3 %>% drop_na(VISCODE)
+
+length(unique(adni4$RID))
+
+# ----------------------------------------
+
+
+adni5 <- adni4 %>% drop_na(DX)
+
+length(unique(adni5$RID))
+
 # ----------------------------------------
 
 # It is not recommended to impute missing family datam so I decided to leave them out of adni2 for now. 
@@ -185,9 +213,9 @@ adni_nofamhist <- subset(adni1, is.na(fam_hist_dad_dem) | is.na(fam_hist_dad_ad)
 # view(adni_nofamhist)
 
 # Remove rows of participants without any family history 
-adni3 <- adni2 %>% drop_na(fam_hist_dad_dem, fam_hist_dad_ad, fam_hist_mum_dem, fam_hist_mum_ad)
+adni6 <- adni5 %>% drop_na(fam_hist_dad_dem, fam_hist_dad_ad, fam_hist_mum_dem, fam_hist_mum_ad)
 # View(adni3)
-length(unique(adni3$RID))
+length(unique(adni6$RID))
 
 
 ```

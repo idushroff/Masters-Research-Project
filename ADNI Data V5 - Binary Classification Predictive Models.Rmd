@@ -1,0 +1,210 @@
+---
+title: "ADNI Data V2 - Binary Classification  Predictive Models"
+output: html_document
+date: "2023-03-29"
+---
+
+# ADNI Data Version 5 - Binary Classification Predictive Models - testing over specific hyperparameter values
+
+## Install and load the relevant packages
+
+```{r}
+
+# install.packages("caret")
+library(caret)
+
+# install.packages("ranger")
+library(ranger)
+
+# install.packages("tidymodels")
+library(tidymodels)
+
+# install.packages("tidyverse")
+library(tidyverse)
+
+# install.packages("glmnet")
+library(glmnet)
+
+# install.packages("modeldatatoo")
+library(modeldatatoo)
+
+# install.packages("aorsf")
+library(aorsf)
+
+# install.packages("censored")
+library(censored)
+
+# install.packages("survival")
+library(survival)
+
+# install.packages("doParallel")
+library(doParallel)
+
+library(dplyr)
+
+library(ggplot2)
+
+
+library(gridExtra)
+library(grid)
+
+```
+
+```{r}
+
+# Import preprocessed data 
+surv_df <- read.csv("preprocessed_data.csv")
+# View(surv_df)
+
+# Convert the event column to a factor
+surv_df$event <- factor(surv_df$event, levels = c(0, 1), labels = c("No AD", "AD"))
+
+# Convert PTGENDER to numeric (0 for Male, 1 for Female)
+surv_df <- surv_df %>%
+  mutate(PTGENDER = ifelse(PTGENDER == "Male", 0, 1))
+
+# Set seed for reproducibility
+set.seed(123)
+
+# Define resampling scheme: repeated k-fold cross-validation
+cv_folds <- vfold_cv(surv_df, v = 5, repeats = 3)
+
+# List of different recipes based on specified feature combinations
+
+# Family History <- fam_hist_dad_ad + fam_hist_mum_ad
+# Demographics <- AGE + PTGENDER + PTEDUCAT
+# Genetics <- APOE4
+# Cognitive Tests <- MMSE + mPACCtrailsB
+
+recipes_list <- list(
+  recipe_1 = recipe(event ~ fam_hist_dad_ad + fam_hist_mum_ad + APOE4 + AGE + PTGENDER + PTEDUCAT + MMSE + mPACCtrailsB, data = surv_df)
+  # recipe_2 = recipe(event ~ fam_hist_dad_ad + fam_hist_mum_ad + APOE4 + AGE + PTGENDER + PTEDUCAT, data = surv_df),
+  # recipe_3 = recipe(event ~ fam_hist_dad_ad + fam_hist_mum_ad + APOE4, data = surv_df),
+  # recipe_4 = recipe(event ~ fam_hist_dad_ad + fam_hist_mum_ad, data = surv_df),
+  # recipe_5 = recipe(event ~ APOE4 + AGE + PTGENDER + PTEDUCAT + MMSE + mPACCtrailsB, data = surv_df)
+)
+
+# Initialize list to store results for each recipe and model
+results_list <- list()
+```
+
+```{r}
+
+# Define hyperparameters and initialize models for Logistic Regression, Random Forest, and XGBoost
+hyperparameter_table <- data.frame(
+  Algorithm = c("Logistic Regression", "Random Forest", "XGBoost"),
+  Hyperparameters = I(list(
+    list("alpha" = c(0.001, 0.01, 0.1), "l1_ratio" = c(0.01, 0.1, 0.5)), 
+    list("trees" = c(100, 200, 500), "mtry" = c(3, 5, 7), "min_n" = c(1, 3, 5)), 
+    list("tree_depth" = c(3, 5, 7), "learn_rate" = c(0.01, 0.1, 0.2), "min_n" = c(1, 3, 5))
+  ))
+)
+
+# Iterate through recipes and run models for each
+for (i in seq_along(recipes_list)) {
+  current_recipe <- recipes_list[[i]]
+  
+  # Define models
+  
+  ## Logistic Regression with alpha and l1_ratio tuning
+  glm_wflow <- workflow() %>% 
+    add_recipe(current_recipe) %>% 
+    add_model(logistic_reg(penalty = tune(), mixture = tune()) %>% 
+                set_engine("glmnet") %>% 
+                set_mode("classification"))
+
+  ## Tuned Random Forest
+  rf_wflow <- workflow() %>% 
+    add_recipe(current_recipe) %>%
+    add_model(rand_forest(trees = tune(), mtry = tune(), min_n = tune()) %>% 
+                set_engine("ranger") %>% 
+                set_mode("classification"))
+
+  ## Tuned XGBoost
+  xgb_wflow <- workflow() %>%
+    add_recipe(current_recipe) %>%
+    add_model(boost_tree(trees = 1000, tree_depth = tune(), learn_rate = tune(), min_n = tune()) %>%
+                set_engine("xgboost", objective = "binary:logistic") %>%
+                set_mode("classification"))
+  
+  # Define evaluation metrics (ROC AUC)
+  classification_metrics <- metric_set(roc_auc)
+
+  # Fit models using resampling
+  glm_res <- tune_grid(glm_wflow, resamples = cv_folds, grid = 10, metrics = classification_metrics, control = control_grid(save_pred = TRUE))
+  rf_res <- tune_grid(rf_wflow, resamples = cv_folds, grid = 10, metrics = classification_metrics, control = control_grid(save_pred = TRUE))
+  xgb_res <- tune_grid(xgb_wflow, resamples = cv_folds, grid = 10, metrics = classification_metrics, control = control_grid(save_pred = TRUE))
+
+  # Store the results for each model
+  results_list[[paste0("Recipe_", i, "_Logistic")]] <- glm_res
+  results_list[[paste0("Recipe_", i, "_RF")]] <- rf_res
+  results_list[[paste0("Recipe_", i, "_XGBoost")]] <- xgb_res
+}
+
+```
+
+```{r}
+# Print the hyperparameter table in a readable format using base R
+for (i in 1:nrow(hyperparameter_table)) {
+  cat("Algorithm:", hyperparameter_table$Algorithm[i], "\n")
+  cat("Hyperparameters:\n")
+  
+  # Extract and print hyperparameters in a list format
+  hyperparams <- hyperparameter_table$Hyperparameters[[i]]
+  for (param in names(hyperparams)) {
+    cat("  ", param, ":", toString(hyperparams[[param]]), "\n")
+  }
+  
+  cat("\n")  # Add a newline for better separation
+}
+
+```
+
+```{r}
+# Function to extract and prepare metrics for plotting
+prepare_plot_data <- function(result, model_name, recipe_name) {
+  collect_metrics(result, summarize = F) %>%
+    mutate(model = model_name, recipe = recipe_name)
+}
+
+# Initialize an empty data frame to store all metrics
+all_metrics <- data.frame()
+
+# Loop through results and extract metrics for each model and recipe
+for (name in names(results_list)) {
+  model_name <- str_extract(name, "Logistic|RF|XGBoost")
+  recipe_name <- str_extract(name, "Recipe_\\d+")
+  
+  metrics_data <- prepare_plot_data(results_list[[name]], model_name, recipe_name)
+  all_metrics <- bind_rows(all_metrics, metrics_data)
+}
+
+# Summarize metrics for plotting
+summary_metrics <- all_metrics %>%
+  group_by(recipe, model, .metric)
+
+# Plot ROC AUC for all models and recipes
+ggplot(summary_metrics, aes(x = recipe, y = .estimate, fill = model)) +
+  geom_boxplot() +
+  facet_wrap(~ .metric, scales = "free_y") +
+  labs(title = "Model Comparison Across Recipes", x = "Recipe", y = "Metric Value") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Filter and prepare the data for ROC AUC
+roc_auc_metrics <- all_metrics %>%
+  filter(.metric == "roc_auc") %>%
+  group_by(recipe, model)
+
+# Create the box plot for ROC AUC
+box_plot <- ggplot(roc_auc_metrics, aes(x = recipe, y = .estimate, fill = model)) +
+  geom_boxplot() +
+  labs(title = "ROC AUC Comparison Across Recipes and Models", 
+       x = "Recipe", 
+       y = "ROC AUC Value") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_y_continuous(limits = c(0.5, 1))
+
+# Create a custom legend for recipes
+recipe_legend <- textGrob("Recipes: \n1. Family History")
+
+```

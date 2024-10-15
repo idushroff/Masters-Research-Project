@@ -23,6 +23,11 @@ library(tidyverse)
 # magrittr: For creating expressive pipelines using the pipe operator %>%.
 # rlang: For advanced manipulation and programming with R expressions.
 
+
+# Install the 'tableone' package for quickly understanding the distribution of variables as it allows for generating summary tables and statistics (means, medians, counts, and percentages) for comparing characteristics between different treatment/demographic groups or other categorical variables in a dataset. 
+# install.packages("remotes")
+# remotes::install_github("kaz-yos/tableone")
+library(tableone)
 ```
 
 ```{r}
@@ -117,6 +122,99 @@ View(convertors)
 
 gg_miss_var(convertors) + ggtitle("Missing Values in Each Column of convertors Dataset")
 vis_miss(convertors) + labs(title = "Heatmap of Missing Values in convertors Dataset")
+```
+
+### Table 01 for UKBB
+
+```{r}
+
+# prune the datasets to only have the columns we want in our table01
+UKB <- UKB %>% select(-FH_na, -conv_fh, -APOE4_e4e4)
+View(UKB)
+
+AIBL <- AIBL %>% select(-FH_na, -conv_fh, -APOE4_e4e4)
+AIBL <- AIBL %>% drop_na(EDU)
+# gg_miss_var(AIBL) + ggtitle("Missing Values in Each Column of AIBL Dataset")
+# vis_miss(AIBL) + labs(title = "Heatmap of Missing Values in AIBL Dataset")
+View(AIBL)
+
+ADNI <- ADNI %>% select(-FH_na, -conv_fh, -APOE4_e4e4)
+
+count_tablev7 <- ADNI %>%
+  group_by(conv) %>%
+  summarise(Count = n())
+View(count_tablev7)
+sum(count_tablev7$Count)
+
+count_tablev8 <- UKB %>%
+  group_by(conv) %>%
+  summarise(Count = n())
+View(count_tablev8)
+sum(count_tablev8$Count)
+
+count_tablev9 <- AIBL %>%
+  group_by(conv) %>%
+  summarise(Count = n())
+View(count_tablev9)
+sum(count_tablev9$Count)
+
+
+## TABLE 01
+# Create a variable list which we want in Table 1
+listVars <- c("AGE.bl", "EDU", "SEX", "APOE4", "FH")
+ 
+# Define categorical variables
+# catVars <- c("DX","PTGENDER")
+catVars <- c("SEX")
+
+table1 <- CreateTableOne(vars = listVars, data = UKB, factorVars = catVars, strata = c("conv"))
+print(table1)
+
+```
+
+### Table 01 for ABIL
+
+```{r}
+
+
+
+# Get time of AD event -- for each ID, arrange by time, pull out the rows with AD dx and take the first.
+progressors1 <- df %>% group_by(RID) %>% arrange(VISCODE) %>% filter(DX=="AD") %>% slice_head(n=1) %>% select(RID, VISCODE, DX, AGE, PTEDUCAT, PTGENDER, APOE4, MMSE, mPACCtrailsB, fam_hist_dad_dem, fam_hist_dad_ad, fam_hist_mum_dem, fam_hist_mum_ad)
+view(progressors1)
+
+# remove all participants from the progressors group who had a AD diagnosis at Viscode = 0 
+progressors <- progressors1 %>% filter(VISCODE!=0)
+view(progressors)
+
+# for non converters you can do similar but take the last visit
+non_progressors <- df %>% group_by(RID) %>% arrange(VISCODE) %>% filter(!any(DX=="AD"), n()>1) %>% slice_tail(n=1) %>% select(RID, VISCODE, DX, AGE, PTEDUCAT, PTGENDER, APOE4, MMSE, mPACCtrailsB, fam_hist_dad_dem, fam_hist_dad_ad, fam_hist_mum_dem, fam_hist_mum_ad)
+view(non_progressors)
+
+
+
+surv_df <- rbind(progressors, non_progressors) %>% mutate(event=as.numeric(DX=="AD"))
+View(surv_df)
+
+
+count_tablev6 <- surv_df %>%
+  group_by(event) %>%
+  summarise(Count = n())
+View(count_tablev6)
+
+sum(count_tablev6$Count)
+
+
+## TABLE 01
+# Create a variable list which we want in Table 1
+listVars <- c("AGE", "PTEDUCAT", "PTGENDER", "APOE4", "MMSE", "mPACCtrailsB", "fam_hist_dad_dem", "fam_hist_dad_ad", "fam_hist_mum_dem", "fam_hist_mum_ad")
+ 
+# Define categorical variables
+# catVars <- c("DX","PTGENDER")
+catVars <- c("PTGENDER")
+
+table1 <- CreateTableOne(vars = listVars, data = surv_df, factorVars = catVars, strata = c("event"))
+print(table1)
+
 ```
 
 ## Regression analysis using the SNP FILE

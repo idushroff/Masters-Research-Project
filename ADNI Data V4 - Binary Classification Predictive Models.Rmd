@@ -4,7 +4,7 @@ output: html_document
 date: "2023-03-29"
 ---
 
-# ADNI Data Version 3 - Binary Classification Predictive Models - trying multiple recipes for best model - xgboost
+# ADNI Data Version 4 - Binary Classification Predictive Models - trying one recipe over all models
 
 ## Install and load the relevant packages
 
@@ -76,11 +76,11 @@ cv_folds <- vfold_cv(surv_df, v = 5, repeats = 3)
 # Cognitive Tests <- MMSE + mPACCtrailsB
 
 recipes_list <- list(
-  recipe_1 = recipe(event ~ fam_hist_dad_ad + fam_hist_mum_ad + APOE4 + AGE + PTGENDER + PTEDUCAT + MMSE + mPACCtrailsB, data = surv_df),
-  recipe_2 = recipe(event ~ fam_hist_dad_ad + fam_hist_mum_ad + APOE4 + AGE + PTGENDER + PTEDUCAT, data = surv_df),
-  recipe_3 = recipe(event ~ fam_hist_dad_ad + fam_hist_mum_ad + APOE4, data = surv_df),
-  recipe_4 = recipe(event ~ fam_hist_dad_ad + fam_hist_mum_ad, data = surv_df),
-  recipe_5 = recipe(event ~ APOE4 + AGE + PTGENDER + PTEDUCAT + MMSE + mPACCtrailsB, data = surv_df)
+  recipe_1 = recipe(event ~ fam_hist_dad_ad + fam_hist_mum_ad + APOE4 + AGE + PTGENDER + PTEDUCAT + MMSE + mPACCtrailsB, data = surv_df)
+  # recipe_2 = recipe(event ~ fam_hist_dad_ad + fam_hist_mum_ad + APOE4 + AGE + PTGENDER + PTEDUCAT, data = surv_df),
+  # recipe_3 = recipe(event ~ fam_hist_dad_ad + fam_hist_mum_ad + APOE4, data = surv_df),
+  # recipe_4 = recipe(event ~ fam_hist_dad_ad + fam_hist_mum_ad, data = surv_df),
+  # recipe_5 = recipe(event ~ APOE4 + AGE + PTGENDER + PTEDUCAT + MMSE + mPACCtrailsB, data = surv_df)
 )
 
 
@@ -95,22 +95,22 @@ for (i in seq_along(recipes_list)) {
   
   ############################################################################
   # Logistic Regression
-  # glm_wflow <- workflow() %>% 
-  #   add_recipe(current_recipe) %>% 
-  #   add_model(logistic_reg() %>% 
-  #               set_engine("glm") %>% 
-  #               set_mode("classification"))
+  glm_wflow <- workflow() %>%
+    add_recipe(current_recipe) %>%
+    add_model(logistic_reg() %>%
+                set_engine("glm") %>%
+                set_mode("classification"))
   ############################################################################
 
   ############################################################################
-  # # Tuned Random Forest
-  # rf_tuned_wflow <- workflow() %>% 
-  #   add_recipe(current_recipe) %>%
-  #   add_model(rand_forest(trees = 1000, #1000 trees in the forest
-  #                         mtry = tune(), #No. of features to consider at each split
-  #                         min_n = tune()) %>% #Min no. of data points in a leaf node
-  #               set_engine("ranger") %>%
-  #               set_mode("classification"))
+  # Tuned Random Forest
+  rf_tuned_wflow <- workflow() %>%
+    add_recipe(current_recipe) %>%
+    add_model(rand_forest(trees = 1000, #1000 trees in the forest
+                          mtry = tune(), #No. of features to consider at each split
+                          min_n = tune()) %>% #Min no. of data points in a leaf node
+                set_engine("ranger") %>%
+                set_mode("classification"))
   ############################################################################
 
   ############################################################################
@@ -132,31 +132,31 @@ for (i in seq_along(recipes_list)) {
   ############################################################################
   
   # Fit models
-  ############################################################################  
-  # glm_res <- fit_resamples(glm_wflow, 
-  #                          resamples = cv_folds, 
-  #                          metrics = classification_metrics, 
-  #                          control = control_resamples(save_pred = TRUE))
-  # 
-  # ############################################################################
-  # ############################################################################
-  # rf_tuned_res <- tune_grid(rf_tuned_wflow, 
-  #                           resamples = cv_folds, 
-  #                           grid = 10, 
-  #                           metrics = classification_metrics, 
-  #                           control = control_grid(save_pred = TRUE))
-  # 
-  # # Select best parameters for the tuned Random Forest
-  # best_rf_tuned <- select_best(rf_tuned_res, metric = "roc_auc")
-  # 
-  # # Finalize the workflow with the best tuning parameters
-  # final_rf_tuned_wflow <- finalize_workflow(rf_tuned_wflow, best_rf_tuned)
-  # 
-  # # Collect predictions for the tuned Random Forest model
-  # rf_tuned_predictions <- fit_resamples(final_rf_tuned_wflow,
-  #                                       resamples = cv_folds,
-  #                                       control = control_resamples(save_pred = TRUE))
-  ##########################################################################
+  ###########################################################################
+  glm_res <- fit_resamples(glm_wflow,
+                           resamples = cv_folds,
+                           metrics = classification_metrics,
+                           control = control_resamples(save_pred = TRUE))
+
+  ############################################################################
+  ############################################################################
+  rf_tuned_res <- tune_grid(rf_tuned_wflow,
+                            resamples = cv_folds,
+                            grid = 10,
+                            metrics = classification_metrics,
+                            control = control_grid(save_pred = TRUE))
+
+  # Select best parameters for the tuned Random Forest
+  best_rf_tuned <- select_best(rf_tuned_res, metric = "roc_auc")
+
+  # Finalize the workflow with the best tuning parameters
+  final_rf_tuned_wflow <- finalize_workflow(rf_tuned_wflow, best_rf_tuned)
+
+  # Collect predictions for the tuned Random Forest model
+  rf_tuned_predictions <- fit_resamples(final_rf_tuned_wflow,
+                                        resamples = cv_folds,
+                                        control = control_resamples(save_pred = TRUE))
+  #########################################################################
   ############################################################################
   xgb_tuned_res <- tune_grid(xgb_tuned_wflow,
                              resamples = cv_folds,
@@ -178,8 +178,8 @@ for (i in seq_along(recipes_list)) {
   ############################################################################
 
   # Store the results for each model
-  # results_list[[paste0("Recipe_", i, "_Logistic")]] <- glm_res
-  # results_list[[paste0("Recipe_", i, "_RF_Tuned")]] <- rf_tuned_predictions
+  results_list[[paste0("Recipe_", i, "_Logistic")]] <- glm_res
+  results_list[[paste0("Recipe_", i, "_RF_Tuned")]] <- rf_tuned_predictions
   results_list[[paste0("Recipe_", i, "_XGBoost_Tuned")]] <- xgb_tuned_predictions
 
 }
@@ -241,10 +241,10 @@ box_plot <- ggplot(roc_auc_metrics, aes(x = recipe, y = .estimate, fill = model)
        x = "Recipe", 
        y = "ROC AUC Value") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  scale_y_continuous(limits = c(0.5, 1))
+  scale_y_continuous(limits = c(0.8, 1))
 
 # Create a custom legend for recipes
-recipe_legend <- textGrob("Recipes: \n1. Family History + Genetics + Demographics + Cognition \n2. Family History + Genetics + Demographics \n3. Family History + Genetics \n4. Family History \n5. Demographics + Genetics + Cognition\n", 
+recipe_legend <- textGrob("Recipes: \n1. Family History + Genetics + Demographics + Cognition   \n", 
                            gp = gpar(fontsize = 10), 
                            hjust = 0)
 
@@ -252,6 +252,7 @@ recipe_legend <- textGrob("Recipes: \n1. Family History + Genetics + Demographic
 
 # Combine the box plot and the recipe legend
 grid.arrange(box_plot, recipe_legend, ncol = 1, heights = c(3, 1))
+
 
 
 ```
