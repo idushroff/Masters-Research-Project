@@ -1,0 +1,537 @@
+---
+title: "ADNI Data - Descriptive Analysis"
+output: html_document
+date: "2023-03-29"
+---
+
+# ADNI Data - Descriptive Analysis
+
+## Install and load the relevant packages
+
+```{r}
+
+# Install and load the naniar package, which provides functions for exploring missing data patterns.
+# install.packages("naniar")
+library(naniar)
+
+# Install the 'tableone' package for quickly understanding the distribution of variables as it allows for generating summary tables and statistics (means, medians, counts, and percentages) for comparing characteristics between different treatment/demographic groups or other categorical variables in a dataset. 
+# install.packages("remotes")
+# remotes::install_github("kaz-yos/tableone")
+library(tableone)
+
+
+# Install packages for plotting survival analysis curves
+# install.packages("survival")
+library(survival)
+
+# Survminer provides functions for creating more advances and visually appealing survival analysis plots. 
+# install.packages("survminer")
+library(survminer)
+
+
+# Install and load the sjlabelled package, which provides functions for working with labelled data.
+# install.packages("sjlabelled")
+library(sjlabelled)
+
+# Install and load the tidyverse package, which is a collection of packages for data manipulation and visualization.
+
+# install.packages("tidyverse")
+library(tidyverse)
+
+# readr: For reading CSV files
+# dplyr: For data manipulation
+# ggplot2:For plots and graphs
+# tidyr: For tidying and reshaping data into a tidy format.
+# purrr: For functional programming and working with lists and vectors.
+# tibble: For creating and working with modern data frames.
+# stringr: For string manipulation and text processing.
+# forcats: For working with categorical data and factors.
+# lubridate: For working with dates and times.
+# magrittr: For creating expressive pipelines using the pipe operator %>%.
+# rlang: For advanced manipulation and programming with R expressions.
+
+```
+
+## Load, Manipulate & Clean the dataset for analysis (Re-name the columns as required).
+
+```{r}
+
+#For users of R, we have developed a data package “ADNIMERGE” which contains coded data, documentation, and analysis vignettes. It depends on Frank Harrrel’s Hmisc package which can be installed from the R package repository (CRAN) by:
+  
+# install.packages("Hmisc")
+library(Hmisc)
+
+
+# setwd("C:/Users/shahu/OneDrive - The University of Melbourne/Documents/Downloads")
+
+# install.packages("ADNIMERGE_0.0.1.tar", repos = NULL, type = "source")
+
+
+library(ADNIMERGE)
+
+# Checking out the different data files
+# View(adnimerge) 
+
+## clean viscode function 
+clean_viscode <- function(viscode) {
+  as.numeric(as.character(factor(viscode, levels = c("sc",
+        "bl", "m03", "m06", "m12", "m18", "m24", "m30", "m36",
+        "m42", "m48", "m54", "m60", "m66", "m72", "m78", "m84",
+        "m90", "m96", "m102", "m108", "m114", "m120", "m126",
+        "m132", "m144"), labels = c(-1, 0, 3, 6, 12, 18, 24,
+        30, 36, 42, 48, 54, 60, 66, 72, 78, 84, 90, 96, 102,
+        108, 114, 120, 126, 132, 144), ordered = F)))
+}
+
+
+# store required columns for data exploration
+adni_data <- adnimerge %>% mutate(DX = as.character(factor(DX, c("CN", "MCI", "Dementia"), c("CN", "MCI", "AD"))), DX.bl = as.character(factor(DX, c("CN", "MCI", "Dementia"), c("CN", "MCI", "AD"))), VISCODE = clean_viscode(VISCODE),
+        ) %>% 
+  sjlabelled::remove_all_labels() %>% 
+  select(RID, VISCODE, EXAMDATE, DX, AGE, 
+         PTEDUCAT, PTGENDER, APOE4, MMSE, 
+         mPACCtrailsB, DX.bl, MMSE.bl, mPACCtrailsB.bl) %>%
+  left_join(fhq %>% 
+              group_by(RID) %>%
+              summarise(
+               fam_hist_dad_dem = 1 * any(FHQDADAD == 'Yes', na.rm = T),
+               fam_hist_dad_ad = 1 * any(FHQDADAD == 'Yes', na.rm = T),
+               fam_hist_mum_dem = 1 * any(FHQDADAD == 'Yes', na.rm = T),
+               fam_hist_mum_ad = 1 * any(FHQMOMAD == 'Yes', na.rm = T)), by = 'RID') 
+
+
+# Create a duplicate for data manipulation: 
+adni1 <- adni_data
+
+# View(adni1)
+```
+
+## Data Exploration:
+
+-   Explore the dataset's structure, dimensions, and data types (e.g., numeric, categorical, time series) to get a general idea of what the data contains.
+
+```{r}
+
+## Display the first 5 lines 
+# head(AD1, 5)
+
+## dimensions 
+# dim(AD1) 
+## 16412 rows and 17 columns
+
+## all the variables, the data type of the variables
+# glimpse(AD1)
+
+## all the variables are numerical except DX which is a character. 
+
+## see the whole data_set
+# View(AD1)
+
+## column/variable names 
+# names(AD1)
+
+# all the possible unique values that exist for each column/variable
+length(unique(adni1$RID))
+# this means that there are 2431 individuals in our data set
+
+# filter is for rows
+# select is for columns
+# this can show us if there are NA = missing data, none = or unknown = which mean diff things
+# table (ColumnName)
+```
+
+### Check if we need to impute missing data
+
+The `gg_miss_var()` and `vis_miss()` functions come from the naniar package and can be used to provide a visual output of the missing data.
+
+```{r}
+gg_miss_var(adni1) # plots the amount of missing values in each column of our data frame
+vis_miss(adni1) # creates a heat-map showing where the missing N/a values in our columns are. This is a useful function to figure our where your data is in bigger data frames. 
+
+```
+
+We can see that there are a lot of missing (NA) values in the VISCODE, APOE4, family history etc
+
+The diagnosis seems to be missing if the MMSE or mPACCtrailsB scores are missing.
+
+## Data Cleaning:
+
+-   Identify and handle missing data appropriately. Impute or remove missing values based on the nature of the missingness and your research objectives.
+
+Understand the Missing Data Mechanism: Before selecting an imputation method, it's essential to understand the nature of missingness in your dataset. Missing data in longitudinal studies can occur due to various reasons, such as dropouts, missed follow-ups, or participant withdrawals. The missing data mechanism can be classified as Missing Completely at Random (MCAR), Missing at Random (MAR), or Missing Not at Random (MNAR). The choice of imputation method can be influenced by the missing data mechanism.
+
+Explore Multiple Imputation Methods: In order to account for individual variability in your longitudinal dataset you should consider imputations methods sutibale for each variable/feature as some might be time-dependent covariates.
+
+Popular imputation methods include: **see notes**
+
+Evaluate Imputation Quality: After imputation, assess the quality of imputed values by comparing them with observed data when available. Additionally, consider conducting sensitivity analyses to evaluate the robustness of your results to different imputation assumptions.
+
+-   Check for and handle any potential data entry errors, outliers, or inconsistent data values that could impact the analysis
+
+------------------------------------------------------------------------
+
+```{r}
+
+# There are not a lot of rows with missing values for the features VISCODE, APOE4 and DX (in correlation with MMSE and trailsB score) so i decided to leave them all out 
+# remove rows where VISCODE = NA, APOE4 = NA
+adni2 <- adni1 %>% drop_na(VISCODE, DX, APOE4, MMSE, mPACCtrailsB)
+# View(adni2)
+# ----------------------------------------
+
+# It is not recommended to impute missing family datam so I decided to leave them out of adni2 for now. 
+# I am storing these excluded participants in adni_nofamhist for future reference. 
+adni_nofamhist <- subset(adni1, is.na(fam_hist_dad_dem) | is.na(fam_hist_dad_ad) | is.na(fam_hist_mum_dem)| is.na(fam_hist_mum_ad))
+# View the RIDs for the fam hist rows with NA values 
+# view(adni_nofamhist)
+
+# Remove rows of participants without any family history 
+adni3 <- adni2 %>% drop_na(fam_hist_dad_dem, fam_hist_dad_ad, fam_hist_mum_dem, fam_hist_mum_ad)
+# View(adni3)
+length(unique(adni3$RID))
+
+
+```
+
+I used the fill function to impute missing data for the DX.bl row based on the DX given to a person for their 1st visit
+
+```{r}
+# # View the rows with missing DX.bl values in adni3
+# missingdxrows <- subset(adni3, is.na(DX.bl))
+# # View(missingdxrows)
+# 
+# # Function to fill missing values in DX.bl column
+# fill_missing_dxbl <- function(df) {
+#   df <- df %>%
+#     group_by(RID) %>%
+#     arrange(VISCODE) %>%
+#     slice_head(n = 1) %>%
+#     mutate(DX.bl = ifelse(is.na(DX.bl), DX, DX.bl)) %>%
+#     ungroup()
+#   return(df)
+# }
+# 
+# # Applying the function to fill missing values
+# missingdxrows <- fill_missing_dxbl(missingdxrows)
+# # View(missingdxrows)
+# 
+# # SKIPPED FOR NOW BECAUASE IT IS NOT REQUIRED IN TABLE01
+```
+
+Review the missing data:
+
+```{r}
+# gg_miss_var(missingdxrows) # plots the amount of missing values in each column of our data frame
+# vis_miss(missingdxrows) # creates a heat-map showing where the missing N/a values in our columns are. This is a useful function to figure our where your data is in bigger data frames. 
+```
+
+IGNORE THE missing values for the DX.bl for now as it is already captured in the DX column.
+
+## Data Description:
+
+-   Generate summary statistics and descriptive analyses to understand the distribution and central tendencies of variables. Identify key demographic characteristics of the study population, such as age, sex, and education level.
+
+### Table 01
+
+**For Progressors I** filter out participants who were diagnosed with Alzheimer's disease (AD) during their first visit (`VISCODE != 0`). I then select the first instance of an AD diagnosis for each participant. This ensures that only those with at least two visits (one where they were not diagnosed with AD and another where they were) are included.
+
+**For Non-Progressors** I filter participants who were never diagnosed with AD (`!any(DX == "AD")`) and have more than one visit (`n() > 1`). This ensures that non-progressors must have at least two visits to be included in the analysis.
+
+```{r}
+
+# prune the adni3 dataset to only have the columns we want in our table01
+adni4 <- adni3 %>% select(-DX.bl, -MMSE.bl, -mPACCtrailsB.bl, -EXAMDATE)
+# View(adni4)
+
+df <- adni4
+# Get time of AD event -- for each ID, arrange by time, pull out the rows with AD dx and take the first.
+progressors1 <- df %>% group_by(RID) %>% arrange(VISCODE) %>% filter(DX=="AD") %>% slice_head(n=1) %>% select(RID, VISCODE, DX, AGE, PTEDUCAT, PTGENDER, APOE4, MMSE, mPACCtrailsB, fam_hist_dad_dem, fam_hist_dad_ad, fam_hist_mum_dem, fam_hist_mum_ad)
+# view(progressors1)
+
+# remove all participants from the progressors group who had a AD diagnosis at Viscode = 0 
+progressors <- progressors1 %>% filter(VISCODE!=0)
+# view(progressors)
+
+# for non converters you can do similar but take the last visit
+non_progressors <- df %>% group_by(RID) %>% arrange(VISCODE) %>% filter(!any(DX=="AD"), n()>1) %>% slice_tail(n=1) %>% select(RID, VISCODE, DX, AGE, PTEDUCAT, PTGENDER, APOE4, MMSE, mPACCtrailsB, fam_hist_dad_dem, fam_hist_dad_ad, fam_hist_mum_dem, fam_hist_mum_ad)
+# view(non_progressors)
+
+
+surv_df <- rbind(progressors, non_progressors) %>% mutate(event=as.numeric(DX=="AD"))
+# View(surv_df)
+
+
+count_tablev6 <- surv_df %>%
+  group_by(event) %>%
+  summarise(Count = n())
+View(count_tablev6)
+
+sum(count_tablev6$Count)
+
+# Remove rows with zero survival times
+surv_df <- surv_df %>% filter(VISCODE > 0)
+View(surv_df)
+# Check event encoding
+# table(surv_df$event)
+
+# Create the new column 'FH' by adding 'fam_hist_dad_ad' and 'fam_hist_mum_ad'
+surv_df$FH <- surv_df$fam_hist_dad_ad + surv_df$fam_hist_mum_ad
+# surv_df
+
+# Rename multiple columns using base R
+names(surv_df)[names(surv_df) == "PTGENDER"] <- "SEX"
+names(surv_df)[names(surv_df) == "PTEDUCAT"] <- "EDU"
+View(surv_df)
+
+## TABLE 01
+# Create a variable list which we want in Table 1
+listVars <- c("AGE", "EDU", "SEX", "APOE4", "FH", "MMSE", "mPACCtrailsB")
+ 
+# Define categorical variables
+catVars <- c("SEX")
+
+table1 <- CreateTableOne(vars = listVars, data = surv_df, factorVars = catVars, strata = c("event"))
+print(table1)
+
+
+```
+
+### 
+
+## Continuous Variables:
+
+#### MMSE
+
+-   mild Alzheimer's disease: MMSE 21--26,
+
+-   moderate Alzheimer's disease: MMSE 10--20,
+
+-   moderately severe Alzheimer's disease: MMSE 10--14,
+
+-   severe Alzheimer's disease: MMSE less than 10.
+
+    ```{r}
+    # Define function to categorize MMSE scores
+    categorize_MMSE <- function(score) {
+      ifelse(score > 26, "Normal",
+             ifelse(score >= 21, "Mild",
+                    ifelse(score >= 15, "Moderate",
+                           ifelse(score >= 10, "Moderately Severe",
+                                  ifelse(score < 10, "Severe", NA)))))
+    }
+
+    # Apply the function to create a new column
+    surv_df$MMSE_group <- categorize_MMSE(surv_df$MMSE)
+
+    # Convert the new column to a factor
+    surv_df$MMSE_group <- factor(surv_df$MMSE_group, levels = c("Normal", "Mild", "Moderate", "Moderately Severe", "Severe"))
+
+
+
+    ```
+
+#### mPACCtrailsb
+
+-   The MPACCbtrails is normalised/average score of 4 different tests (MMSE, ..)
+
+-   I'm not sure how to do - what is the grouping definition like the one for MMSE.
+
+```{r}
+
+# Calculate quantiles to divide the data into 3 equal groups
+quantiles <- quantile(surv_df$mPACCtrailsB, probs = c(0, 1/3, 2/3, 1))
+
+# Define function to categorize education levels
+categorize_mPACC <- function(level) {
+  ifelse(level <= quantiles[2], "Low",
+         ifelse(level <= quantiles[3], "Medium", "High"))
+}
+
+# Apply the function to create a new column
+surv_df$mPACC_group <- categorize_mPACC(surv_df$mPACCtrailsB)
+
+# Convert the new column to a factor
+surv_df$mPACC_group <- factor(surv_df$mPACC_group, levels = c("Low", "Medium", "High"))
+
+
+```
+
+#### AGE
+
+-   split into two groups - over and under 60
+
+    ```{r}
+
+    # Convert VISCODE to a factor for survival analysis
+    surv_df$VISCODE <- as.factor(surv_df$VISCODE)
+
+    # split into two groups - over and under 60
+    surv_df$strata <- ifelse(surv_df$AGE >= 60, "over60", "under60") 
+    View(surv_df)
+
+
+    # Fit Kaplan-Meier survival curve for each gender
+    km_age <- survfit(Surv(time = as.numeric(VISCODE), event=event)~strata, data=surv_df)
+
+    km_age
+
+
+    ```
+
+#### EDUCATION
+
+-   group stratergy - split into 3 equal groups
+
+```{r}
+
+# Calculate quantiles to divide the data into 3 equal groups
+quantiles <- quantile(surv_df$PTEDUCAT, probs = c(0, 1/3, 2/3, 1))
+
+# Define function to categorize education levels
+categorize_education <- function(level) {
+  ifelse(level <= quantiles[2], "Low",
+         ifelse(level <= quantiles[3], "Medium", "High"))
+}
+
+# Apply the function to create a new column
+surv_df$education_group <- categorize_education(surv_df$PTEDUCAT)
+
+# Convert the new column to a factor
+surv_df$education_group <- factor(surv_df$education_group, levels = c("Low", "Medium", "High"))
+
+```
+
+## Save pre-processed data to a CSV file for Predictive Analysis
+
+```{r}
+
+# Save preprocessed data to a CSV file
+write.csv(surv_df, "preprocessed_data.csv", row.names=FALSE)
+
+```
+
+```{r}
+
+# Using the tidy function from the broom package on the survfit() object to produce a table of the KM estimate of the survival function S(t)
+KM.tab <- tidy(KM) # save KM survival function as a tibble
+KM.tab
+
+# The estimate column is the kaplan mier estimated survival time at each given viscode/time point
+```
+
+```{r}
+
+plot(KM, ylab="Survival Probability", xlab="VISCODE")
+```
+
+# We should estimate KM survival functions for progressors and nonprogressors seperately:
+
+```{r}
+
+KM.Gender <- survfit(Surv(VISCODE, event) ~ PTGENDER, data=surv_df)
+KM.Gender
+tidy(KM.Gender)
+
+ggsurvplot(KM.Gender, risk.table=T, palette = "Accent", size=0.5, ggtheme = theme_minimal())
+
+KM.APOE4 <- survfit(Surv(VISCODE, event) ~ APOE4, data=surv_df)
+tidy(KM.APOE4)
+
+```
+
+```{r}
+
+# log rank test
+survdiff(Surv(VISCODE, event) ~ PTGENDER, data=surv_df)
+
+```
+
+\# since the hazard ratio for contains one it is not considered to be a satistically significant variable
+
+#before hazard ratio = 1 -\> indicates factors decrease risk of AD? after = increased risk?
+
+#need help with
+
+#cox model is a safer way to
+
+#plot survival curve
+
+```{r}
+# why is dad dem and mum dem not priting - coz it's exactly the same as dad and mum ad so leave those out - can double check with line of code here: 
+table(surv_df$fam_hist_dad_dem, surv_df$fam_hist_dad_ad)
+```
+
+```{r}
+
+library(survival)
+library(broom)
+library(ggplot2)
+library(dplyr)
+
+# List of variables to fit separately
+variables <- c("PTGENDER", "PTEDUCAT", "AGE", "APOE4", "MMSE", 
+               "mPACCtrailsB", "fam_hist_dad_ad", "fam_hist_mum_ad")
+
+# Initialize an empty tibble to store results
+cox_results <- tibble()
+
+# Loop over variables and fit Cox models
+for (var in variables) {
+  # Fit Cox model for each variable separately
+  formula <- as.formula(paste("Surv(VISCODE, event) ~", var))
+  cox_model <- coxph(formula, data=surv_df)
+  
+  # Tidy the results and store them in a tibble
+  cox_tibble <- tidy(cox_model, exponentiate = TRUE, conf.int = TRUE)
+  
+  # Add variable name to the results
+  cox_tibble <- cox_tibble %>% mutate(variable = var)
+  
+  # Append to the results tibble
+  cox_results <- bind_rows(cox_results, cox_tibble)
+}
+
+cox_results
+
+# Create a forest plot
+ggplot(cox_results, aes(y=variable, x=estimate, xmin=conf.low, xmax=conf.high)) + 
+  geom_pointrange() + 
+  geom_vline(xintercept=1, color="red") + 
+  labs(x="Hazard Ratio", title="Hazard Ratios and 95% CIs") +
+  theme_classic()
+
+```
+
+**Figure 1**: Forest plot displaying the hazard ratios and 95% confidence intervals for each variable from separate Cox proportional hazards models. Variables with hazard ratios greater than 1 (e.g., AGE, APOE4) indicate an increased risk of the event, while those with hazard ratios less than 1 (e.g., MMSE, mPACCtrailsB) indicate a protective effect. The red vertical line at HR = 1 represents no effect. Confidence intervals that do not cross the red line suggest statistically significant associations.
+
+```{r}
+
+# Round the hazard ratio and confidence intervals to 3 decimal places
+cox_results_rounded <- cox_results %>%
+  mutate(estimate = round(estimate, 2),
+         conf.low = round(conf.low, 2),
+         conf.high = round(conf.high, 2)) %>%
+  select(variable, estimate, conf.low, conf.high) %>%
+  arrange(variable)
+
+# Display the rounded values
+print(cox_results_rounded)
+
+```
+
+The Cox proportional hazards models were fitted separately for each variable to assess their association with the hazard of the event (e.g., disease progression or mortality). The hazard ratios (HR) and 95% confidence intervals (CIs) for each variable are presented below:
+
+-   **AGE**: The hazard ratio of 1.02 (95% CI: 1.00--1.03) suggests that for each additional year of age, the hazard of the event increases by 2%. This result is statistically significant, as the confidence interval does not cross 1.
+
+-   **APOE4**: A hazard ratio of 2.24 (95% CI: 1.94--2.58) indicates that individuals with the APOE4 allele have more than twice the risk of the event compared to those without it. This strong positive association is statistically significant.
+
+-   **MMSE**: With a hazard ratio of 0.83 (95% CI: 0.81--0.84), higher MMSE scores, reflecting better cognitive function, are associated with a 17% decrease in the hazard of the event. This protective effect is highly significant.
+
+-   **PTEDUCAT**: The hazard ratio of 0.96 (95% CI: 0.93--0.99) suggests that higher education levels slightly decrease the hazard of the event by 4%, and this result is statistically significant.
+
+-   **PTGENDER**: The hazard ratio of 1.22 (95% CI: 0.99--1.50) indicates a potential 22% increase in hazard for one gender over the other, although the confidence interval narrowly crosses 1, suggesting that this result is not statistically significant.
+
+-   **fam_hist_dad_ad**: With a hazard ratio of 1.07 (95% CI: 0.77--1.48), the presence of Alzheimer's disease in the father does not show a statistically significant association with the event, as the confidence interval crosses 1.
+
+-   **fam_hist_mum_ad**: Similarly, a hazard ratio of 0.97 (95% CI: 0.77--1.22) indicates no significant association between maternal history of Alzheimer's disease and the hazard of the event.
+
+-   **mPACCtrailsB**: The hazard ratio of 0.87 (95% CI: 0.86--0.88) suggests that better performance on the mPACCtrailsB cognitive test is associated with a 13% reduction in the hazard of the event. This protective effect is statistically significant.

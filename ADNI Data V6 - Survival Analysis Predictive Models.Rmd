@@ -4,7 +4,7 @@ output: html_document
 date: "2023-03-29"
 ---
 
-# ADNI Data Version 5 - Survival Analysis Predictive Models - testing over specific hyperparameter values + trying one recipe over all models
+# ADNI Data Version 6 - Survival Analysis Predictive Models - testing over specific hyperparameter values + trying multiple recipes for best model
 
 ## Install and load the relevant packages
 
@@ -86,34 +86,29 @@ repeated_folds <- vfold_cv(surv_df1, v = 5, repeats = 3) # 5-fold cross-validati
 # DGC = Demographics + Genetics + Cognition
 
 recipes_list <- list(
-  D = recipe(diagnosis_surv ~ AGE + SEX + EDU, data = surv_df1)
-  # Fh = recipe(diagnosis_surv ~ FH, data = surv_df1),
-  # DFh = recipe(diagnosis_surv ~ AGE + SEX + EDU + FH, data = surv_df1),
-  # DGFh = recipe(diagnosis_surv ~ AGE + SEX + EDU + APOE4 + FH, data = surv_df1),
-  # DGCFh = recipe(diagnosis_surv ~ AGE + SEX + EDU + APOE4 + MMSE + mPACCtrailsB + FH, data = surv_df1),
-  # DGC = recipe(diagnosis_surv ~ APOE4 + AGE + SEX + EDU + MMSE + mPACCtrailsB, data = surv_df1)
+  D = recipe(diagnosis_surv ~ AGE + SEX + EDU, data = surv_df1),
+  Fh = recipe(diagnosis_surv ~ FH, data = surv_df1),
+  DFh = recipe(diagnosis_surv ~ AGE + SEX + EDU + FH, data = surv_df1),
+  DGFh = recipe(diagnosis_surv ~ AGE + SEX + EDU + APOE4 + FH, data = surv_df1),
+  DGCFh = recipe(diagnosis_surv ~ AGE + SEX + EDU + APOE4 + MMSE + mPACCtrailsB + FH, data = surv_df1),
+  DGC = recipe(diagnosis_surv ~ APOE4 + AGE + SEX + EDU + MMSE + mPACCtrailsB, data = surv_df1)
 )
 
 # Initialize list to store results for each recipe and model
 results_list <- list()
 
 # Define tuning grid for Cox model (regularization penalty)
-cox_grid <- expand.grid(
+cox_grid <- grid_values(
   penalty = c(0.01, 0.1, 1, 10, 100)  # Specific values for regularization penalty
 )
 
-# View the grid
-print(cox_grid)
-
 
 # Define tuning grid for Random Forest
-rf_grid <- expand.grid(
+rf_grid <- grid_values(
   max_depth = c(0, 2, 5, 10),            # Maximum depth of the tree
-  min_samples_split = c(2, 5, 10),     # Minimum samples required to split a node
-  min_samples_leaf = c(1, 2, 4) # Minimum samples in a leaf node
+  min_samples_split = c(2, 5, 10),       # Minimum samples required to split a node
+  min_n = c(1, 2, 4)                     # Minimum samples in a leaf node
 )
-# View the grid
-print(rf_grid)
 ```
 
 Define all the Recipes
@@ -144,14 +139,10 @@ for (i in seq_along(recipes_list)) {
   # Random Forest Model
   oblique_wflow <- workflow() %>%
     add_recipe(current_recipe) %>%
-    add_model(rand_forest(trees = 1000,
-                          max_depth = tune(), 
-                          min_samples_split = tune(),
-                          min_samples_leaf = tune()) %>% 
-                set_engine("ranger") %>% 
+    add_model(rand_forest(mtry = tune(), min_n = tune()) %>% 
+                set_engine("aorsf") %>% 
                 set_mode("censored regression"))
   
-
   # Define evaluation metrics for survival analysis
   survival_metrics <- metric_set(brier_survival_integrated, 
                                  roc_auc_survival, 
@@ -183,9 +174,9 @@ for (i in seq_along(recipes_list)) {
                            control = control_grid(save_pred = TRUE))
   
   # Store the results for each model
-  results_list[[paste0("Feature_Set_", i, "_Weibull")]] <- survreg_res
-  results_list[[paste0("Feature_Set_", i, "_Cox")]] <- coxnet_res
-  results_list[[paste0("Feature_Set_", i, "_RandomForest")]] <- oblique_res
+  results_list[[paste0("Recipe_", i, "_Weibull")]] <- survreg_res
+  results_list[[paste0("Recipe_", i, "_Cox")]] <- coxnet_res
+  results_list[[paste0("Recipe_", i, "_RandomForest")]] <- oblique_res
 }
 
 ```
@@ -213,7 +204,7 @@ for (name in names(results_list)) {
 
 
 # Plot Brier score and ROC AUC for all models and recipes
-SurvivalAllModels_0 <- ggplot(all_metrics, aes(x = recipe, y = mean, fill = Model)) +
+Survival_X_All_0 <- ggplot(all_metrics, aes(x = recipe, y = mean, fill = Model)) +
   geom_boxplot() +
   facet_wrap(~.metric, scales = "free_y") +
   labs(title = "Model Comparison Across Recipes", x = "Feature Set(s)", y = "Metric Value") +
@@ -221,8 +212,7 @@ SurvivalAllModels_0 <- ggplot(all_metrics, aes(x = recipe, y = mean, fill = Mode
   theme_light(base_size = 13) + 
   theme(legend.position = 'bottom')
 
-# Print the box plot
-print(SurvivalAllModels_0)
+print(Survival_X_All_0)
 
 
 # Custom legend (optional)
@@ -231,8 +221,8 @@ recipe_legend1 <- textGrob("Feature set: \n1. Demographics (D) = Age, Gender, Ed
                            hjust = 0)
 
 # Combine the box plot and the legend
-SurvivalAllModels_1 <- grid.arrange(SurvivalAllModels_0, recipe_legend1, ncol = 1, heights = c(3, 1))
-print(SurvivalAllModels_1)
+Survival_X_All_1 <- grid.arrange(Survival_X_All_0, recipe_legend1, ncol = 1, heights = c(3, 1))
+print(Survival_X_All_1)
 
 # Custom legend (optional)
 recipe_legend2 <- textGrob("Feature set: \n1. Demographics (D) \n2. Family History (DFh) \n3. Demographics + Family History (DFh) \n4. Demographics + Genetics + Family History (DGFh) \n5. Demographics + Genetics + Cognition + Family History (DGCFh) \n6. Demographics + Genetics + Cognition (DGC) \n",
@@ -240,15 +230,13 @@ recipe_legend2 <- textGrob("Feature set: \n1. Demographics (D) \n2. Family Histo
                            hjust = 0)
 
 # Combine the box plot and the legend
-SurvivalAllModels_2 <- grid.arrange(SurvivalAllModels_0, recipe_legend2, ncol = 1, heights = c(3, 1))
-print(SurvivalAllModels_2)
+Survival_X_All_2 <- grid.arrange(Survival_X_All_0, recipe_legend2, ncol = 1, heights = c(3, 1))
+print(Survival_X_All_2)
 
 # Save the updated plot
-ggsave("SurvivalAllModels_0.png", plot = SurvivalAllModels_0, width = 10, height = 10)
-ggsave("SurvivalAllModels_1.png", plot = SurvivalAllModels_1, width = 10, height = 10)
-ggsave("SurvivalAllModels_2.png", plot = SurvivalAllModels_2, width = 10, height = 10)
-
-
+ggsave("Survival_X_All_0.png", plot = Survival_X_All_0, width = 10, height = 10)
+ggsave("Survival_X_All_1.png", plot = Survival_X_All_1, width = 10, height = 10)
+ggsave("Survival_X_All_2.png", plot = Survival_X_All_2, width = 10, height = 10)
 ```
 
 -   Notes:
