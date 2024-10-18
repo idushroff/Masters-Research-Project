@@ -4,7 +4,7 @@ output: html_document
 date: "2023-03-29"
 ---
 
-# ADNI Data Version 5 - Binary Classification Predictive Models - testing over specific hyperparameter values + trying one recipe over all models
+# ADNI Data Version 6 - Binary Classification Predictive Models - testing over specific hyperparameter values + trying multiple recipes for best model - xgboost
 
 ## Install and load the relevant packages
 
@@ -44,21 +44,21 @@ library(dplyr)
 
 library(ggplot2)
 
+
 library(gridExtra)
 library(grid)
 
 ```
 
 ```{r}
-
 # Import preprocessed data 
 surv_df <- read.csv("preprocessed_data.csv")
-# View(surv_df)
+View(surv_df)
 
 # Convert the event column to a factor
 surv_df$event <- factor(surv_df$event, levels = c(0, 1), labels = c("No AD", "AD"))
 
-# Convert PTGENDER to numeric (0 for Male, 1 for Female)
+# Convert SEX to numeric (0 for Male, 1 for Female)
 surv_df <- surv_df %>%
   mutate(SEX = ifelse(SEX == "Male", 0, 1))
 
@@ -78,58 +78,30 @@ cv_folds <- vfold_cv(surv_df, v = 5, repeats = 3)
 # DGC = Demographics + Genetics + Cognition
 
 recipes_list <- list(
-  recipe_D = recipe(event ~ AGE + SEX + EDU, data = surv_df)
-  # recipe_F = recipe(event ~ FH, data = surv_df),
-  # recipe_DF = recipe(event ~ AGE + SEX + EDU + FH, data = surv_df),
-  # recipe_DGF = recipe(event ~ AGE + SEX + EDU + APOE4 + FH, data = surv_df),
-  # recipe_DGCF = recipe(event ~ AGE + SEX + EDU + APOE4 + MMSE + mPACCtrailsB + FH, data = surv_df),
-  # recipe_DGC = recipe(event ~ APOE4 + AGE + SEX + EDU + MMSE + mPACCtrailsB, data = surv_df)
-)
-
-
-# Initialize list to store results for each recipe and model
-results_list <- list()
-```
-
-```{r}
+  recipe_D = recipe(event ~ AGE + SEX + EDU, data = surv_df),
+  recipe_F = recipe(event ~ FH, data = surv_df),
+  recipe_DF = recipe(event ~ AGE + SEX + EDU + FH, data = surv_df),
+  recipe_DGF = recipe(event ~ AGE + SEX + EDU + APOE4 + FH, data = surv_df),
+  recipe_DGCF = recipe(event ~ AGE + SEX + EDU + APOE4 + MMSE + mPACCtrailsB + FH, data = surv_df),
+  recipe_DGC = recipe(event ~ APOE4 + AGE + SEX + EDU + MMSE + mPACCtrailsB, data = surv_df))
 
 # Define hyperparameters and initialize models for Logistic Regression, Random Forest, and XGBoost
 hyperparameter_table <- data.frame(
-  Algorithm = c("Logistic Regression", "Random Forest", "XGBoost"),
+  Algorithm = c("XGBoost"),
   Hyperparameters = I(list(
-    list("No hyperparameters were tuned"),  # Logistic Regression
-    list("trees" = 1000,                    # Random Forest
-         "mtry" = c(3, 5, 7), 
-         "min_n" = c(5, 10, 20)), 
     list("trees" = 200,                     # XGBoost
          "learn_rate" = c(0.03, 0.08, 0.2, 0.5), 
          "tree_depth" = c(2, 5))
   ))
 )
 
-# View the table
-print(hyperparameter_table)
-
+# Initialize list to store results for each recipe and model
+results_list <- list()
 
 # Iterate through recipes and run models for each
 for (i in seq_along(recipes_list)) {
   current_recipe <- recipes_list[[i]]
   
-  # Define models
-  
-  ## Logistic Regression with alpha and l1_ratio tuning
-  glm_wflow <- workflow() %>% 
-    add_recipe(current_recipe) %>% 
-    add_model(logistic_reg(penalty = tune(), mixture = tune()) %>% 
-                set_engine("glmnet") %>% 
-                set_mode("classification"))
-
-  ## Tuned Random Forest
-  rf_wflow <- workflow() %>% 
-    add_recipe(current_recipe) %>%
-    add_model(rand_forest(trees = tune(), mtry = tune(), min_n = tune()) %>% 
-                set_engine("ranger") %>% 
-                set_mode("classification"))
 
   ## Tuned XGBoost
   xgb_wflow <- workflow() %>%
@@ -142,48 +114,32 @@ for (i in seq_along(recipes_list)) {
   classification_metrics <- metric_set(roc_auc)
 
   # Fit models using resampling
-  glm_res <- tune_grid(glm_wflow, resamples = cv_folds, grid = 10, metrics = classification_metrics, control = control_grid(save_pred = TRUE))
-  rf_res <- tune_grid(rf_wflow, resamples = cv_folds, grid = 10, metrics = classification_metrics, control = control_grid(save_pred = TRUE))
   xgb_res <- tune_grid(xgb_wflow, resamples = cv_folds, grid = 10, metrics = classification_metrics, control = control_grid(save_pred = TRUE))
 
   # Store the results for each model
-  results_list[[paste0("Recipe_", i, "_Logistic")]] <- glm_res
-  results_list[[paste0("Recipe_", i, "_RF")]] <- rf_res
   results_list[[paste0("Recipe_", i, "_XGBoost")]] <- xgb_res
 }
 
 ```
 
 ```{r}
-# # Print the hyperparameter table in a readable format using base R
-# for (i in 1:nrow(hyperparameter_table)) {
-#   cat("Algorithm:", hyperparameter_table$Algorithm[i], "\n")
-#   cat("Hyperparameters:\n")
-#   
-#   # Extract and print hyperparameters in a list format
-#   hyperparams <- hyperparameter_table$Hyperparameters[[i]]
-#   for (param in names(hyperparams)) {
-#     cat("  ", param, ":", toString(hyperparams[[param]]), "\n")
-#   }
-#   
-#   cat("\n")  # Add a newline for better separation
-# }
 
-```
-
-```{r}
 # Function to extract and prepare metrics for plotting
 prepare_plot_data <- function(result, model_name, recipe_name) {
   collect_metrics(result, summarize = F) %>%
     mutate(model = model_name, recipe = recipe_name)
 }
 
+
 # Initialize an empty data frame to store all metrics
 all_metrics <- data.frame()
 all_metrics
+#################################
+
+
 # Loop through results and extract metrics for each model and recipe
 for (name in names(results_list)) {
-  model_name <- str_extract(name, "Logistic|RF|XGBoost")
+  model_name <- str_extract(name, "XGBoost")
   recipe_name <- str_extract(name, "Recipe_\\d+")
   
   metrics_data <- prepare_plot_data(results_list[[name]], model_name, recipe_name)
@@ -192,30 +148,40 @@ for (name in names(results_list)) {
 
 # Summarize metrics for plotting
 summary_metrics <- all_metrics %>%
-  group_by(recipe, model, .metric)
+  group_by(recipe, model, .metric) 
+# %>%
+  # summarize(estimate = list(.estimate), .groups = 'drop') %>%
+  # unnest(estimate)
+summary_metrics
 
 # Plot ROC AUC for all models and recipes
 ggplot(summary_metrics, aes(x = recipe, y = .estimate, fill = model)) +
   geom_boxplot() +
   facet_wrap(~ .metric, scales = "free_y") +
-  labs(title = "ROC AUC Comparison Across Feature Sets and Binary Classification Models", x = "Feature Set(s)", y = "Metric Value") +
+  labs(title = "Model Comparison Across Recipes", x = "Feature Set(s)", y = "Metric Value") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
-  theme_light(base_size = 13) + 
+  theme_light(base_size = 16) + 
   theme(legend.position = 'bottom')
 
+#################################
 # Filter and prepare the data for ROC AUC
 roc_auc_metrics <- all_metrics %>%
   filter(.metric == "roc_auc") %>%
-  group_by(recipe, model)
+  group_by(recipe, Model) 
+# %>%
+  # summarize(estimate = list(.estimate), .groups = 'drop') %>%
+  # unnest(cols = c(.estimate))
+roc_auc_metrics
 
-# Create the box plot for ROC AUC
-box_plot <- ggplot(roc_auc_metrics, aes(x = recipe, y = .estimate, fill = model)) +
+# Create the box plot
+box_plot <- ggplot(roc_auc_metrics, aes(x = recipe, y = .estimate, fill = Model)) +
   geom_boxplot() +
-  labs(title = "ROC AUC Comparison Across Feature Sets and Binary Classification Models", 
-       x = "Feature Set", 
+  labs(title = "ROC AUC Comparison Across Recipes and Models", 
+       x = "Feature Set(s)", 
        y = "ROC AUC Value") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  theme_light(base_size = 13) + 
+  scale_y_continuous(limits = c(0.5, 1)) + 
+  theme_light(base_size = 16) + 
   theme(legend.position = 'bottom')
 
 # D = Demographics 
@@ -226,24 +192,28 @@ box_plot <- ggplot(roc_auc_metrics, aes(x = recipe, y = .estimate, fill = model)
 # DGC = Demographics + Genetics + Cognition
 
 # Create a custom legend for recipes
-recipe_legend <- textGrob("Feature set: \n1. Demographics = Age, Gender, Education \n", 
+recipe_legend <- textGrob("Feature sets: \n1. D = Demographics \n2. F = Family History \n3. DF = Demographics + Family History + Genetics \n4. DGF = Demographics + Genetics + Family History \n5. DGCF = Demographics + Genetics + Cognition + Family History \n6. DGC = Demographics + Genetics + Cognition \n", 
                            gp = gpar(fontsize = 10), 
                            hjust = 0)
+
 #################################
 
 # Combine the box plot and the recipe legend
 grid.arrange(box_plot, recipe_legend, ncol = 1, heights = c(3, 1))
 
 #############################################
+
 # Save the plot
 ggsave("BinaryCPlot1.png", plot = box_plot, width = 6, height = 4)
 
-
 ```
 
-UPDATE - change recipe to feature set
+\#######################################################
+
+# FINAL 
 
 ```{r}
+
 # Import preprocessed data
 surv_df <- read.csv("preprocessed_data.csv")
 
@@ -262,12 +232,12 @@ cv_folds <- vfold_cv(surv_df, v = 5, repeats = 3)
 
 # List of different feature sets based on specified feature combinations
 recipes_list <- list(
-  D = recipe(event ~ AGE + SEX + EDU, data = surv_df)
-  # Fh = recipe(event ~ FH, data = surv_df),
-  # DFh = recipe(event ~ AGE + SEX + EDU + FH, data = surv_df),
-  # DGFh = recipe(event ~ AGE + SEX + EDU + APOE4 + FH, data = surv_df),
-  # DGCFh = recipe(event ~ AGE + SEX + EDU + APOE4 + MMSE + mPACCtrailsB + FH, data = surv_df),
-  # DGC = recipe(event ~ APOE4 + AGE + SEX + EDU + MMSE + mPACCtrailsB, data = surv_df)
+  D = recipe(event ~ AGE + SEX + EDU, data = surv_df),
+  Fh = recipe(event ~ FH, data = surv_df),
+  DFh = recipe(event ~ AGE + SEX + EDU + FH, data = surv_df),
+  DGFh = recipe(event ~ AGE + SEX + EDU + APOE4 + FH, data = surv_df),
+  DGCFh = recipe(event ~ AGE + SEX + EDU + APOE4 + MMSE + mPACCtrailsB + FH, data = surv_df),
+  DGC = recipe(event ~ APOE4 + AGE + SEX + EDU + MMSE + mPACCtrailsB, data = surv_df)
 )
 
 # Initialize list to store results for each feature set and model
@@ -296,21 +266,21 @@ for (i in seq_along(recipes_list)) {
   
   # Define models
   
-  # Logistic Regression with alpha and l1_ratio tuning
-  glm_wflow <- workflow() %>%
-    add_recipe(current_recipe) %>%
-    add_model(logistic_reg(penalty = tune(), mixture = tune()) %>%
-                set_engine("glmnet") %>%
-                set_mode("classification"))
+  ## Logistic Regression with alpha and l1_ratio tuning
+  # glm_wflow <- workflow() %>% 
+  #   add_recipe(current_recipe) %>% 
+  #   add_model(logistic_reg(penalty = tune(), mixture = tune()) %>% 
+  #               set_engine("glmnet") %>% 
+  #               set_mode("classification"))
 
   # ## Tuned Random Forest
-  rf_wflow <- workflow() %>%
-    add_recipe(current_recipe) %>%
-    add_model(rand_forest(trees = tune(), mtry = tune(), min_n = tune()) %>%
-                set_engine("ranger") %>%
-                set_mode("classification"))
-
-  # Tuned XGBoost
+  # rf_wflow <- workflow() %>% 
+  #   add_recipe(current_recipe) %>%
+  #   add_model(rand_forest(trees = tune(), mtry = tune(), min_n = tune()) %>% 
+  #               set_engine("ranger") %>% 
+  #               set_mode("classification"))
+  # 
+  ## Tuned XGBoost
   xgb_wflow <- workflow() %>%
     add_recipe(current_recipe) %>%
     add_model(boost_tree(trees = 1000, tree_depth = tune(), learn_rate = tune(),  min_n = tune()) %>%
@@ -321,13 +291,13 @@ for (i in seq_along(recipes_list)) {
   classification_metrics <- metric_set(roc_auc)
 
   # Fit models using resampling
-  glm_res <- tune_grid(glm_wflow, resamples = cv_folds, grid = 10, metrics = classification_metrics, control = control_grid(save_pred = TRUE))
-  rf_res <- tune_grid(rf_wflow, resamples = cv_folds, grid = 10, metrics = classification_metrics, control = control_grid(save_pred = TRUE))
+  # glm_res <- tune_grid(glm_wflow, resamples = cv_folds, grid = 10, metrics = classification_metrics, control = control_grid(save_pred = TRUE))
+  # rf_res <- tune_grid(rf_wflow, resamples = cv_folds, grid = 10, metrics = classification_metrics, control = control_grid(save_pred = TRUE))
   xgb_res <- tune_grid(xgb_wflow, resamples = cv_folds, grid = 10, metrics = classification_metrics, control = control_grid(save_pred = TRUE))
 
   # Store the results for each model
-  results_list[[paste0("Feature_Set_", names(recipes_list)[i], "_Logistic")]] <- glm_res
-  results_list[[paste0("Feature_Set_", names(recipes_list)[i], "_RF")]] <- rf_res
+  # results_list[[paste0("Feature_Set_", names(recipes_list)[i], "_Logistic")]] <- glm_res
+  # results_list[[paste0("Feature_Set_", names(recipes_list)[i], "_RF")]] <- rf_res
   results_list[[paste0("Feature_Set_", names(recipes_list)[i], "_XGBoost")]] <- xgb_res
 }
 
@@ -355,7 +325,7 @@ summary_metrics <- all_metrics %>%
   group_by(feature_set, Model, .metric)
 
 # Plot ROC AUC for all models and feature sets
-BinaryAllModels_0 <- ggplot(summary_metrics, aes(x = feature_set, y = .estimate, fill = Model)) +
+BinaryXGB_All_0 <- ggplot(summary_metrics, aes(x = feature_set, y = .estimate, fill = Model)) +
   geom_boxplot() +
   facet_wrap(~ .metric, scales = "free_y") +
   labs(title = "Binary Classification - ROC AUC Comparison of Feature Sets Across Best Model", 
@@ -367,7 +337,7 @@ BinaryAllModels_0 <- ggplot(summary_metrics, aes(x = feature_set, y = .estimate,
 
 
 # Print the box plot
-print(BinaryAllModels_0)
+print(BinaryXGB_All_0)
 
 
 
@@ -377,22 +347,22 @@ recipe_legend1 <- textGrob("Feature set: \n1. Demographics (D) = Age, Gender, Ed
                            hjust = 0)
 
 # Combine the box plot and the legend
-BinaryAllModels_1 <- grid.arrange(BinaryAllModels_0, recipe_legend1, ncol = 1, heights = c(3, 1))
-print(BinaryAllModels_1)
+BinaryXGB_All_1 <- grid.arrange(BinaryXGB_All_0, recipe_legend1, ncol = 1, heights = c(3, 1))
+print(BinaryXGB_All_1)
 
 # Custom legend (optional)
-recipe_legend2 <- textGrob("Feature set: \n1. Demographics (D) \n2. Family History (DFh) \n3. Demographics + Family History (DFh) \n4. Demographics + Genetics + Family History (DGFh) \n5. Demographics + Genetics + Cognition + Family History (DGCFh) \n6. Demographics + Genetics + Cognition (DGC) \n",
+recipe_legend2 <- textGrob("Feature set: \n1. Demographics (D) \n2. Family History (Fh) \n3. Demographics + Family History (DFh) \n4. Demographics + Genetics + Family History (DGFh) \n5. Demographics + Genetics + Cognition + Family History (DGCFh) \n6. Demographics + Genetics + Cognition (DGC) \n",
                            gp = gpar(fontsize = 10),
                            hjust = 0)
 
 # Combine the box plot and the legend
-BinaryAllModels_2 <- grid.arrange(BinaryAllModels_0, recipe_legend2, ncol = 1, heights = c(3, 1))
-print(BinaryAllModels_2)
+BinaryXGB_All_2 <- grid.arrange(BinaryXGB_All_0, recipe_legend2, ncol = 1, heights = c(3, 1))
+print(BinaryXGB_All_2)
 
 # Save the updated plot
-ggsave("Binary_All_Models_0.png", plot = BinaryAllModels_0, width = 10, height = 10)
-ggsave("Binary_All_Models_1.png", plot = BinaryAllModels_1, width = 10, height = 10)
-ggsave("Binary_All_Models_2.png", plot = BinaryAllModels_2, width = 10, height = 10)
+ggsave("BinaryXGB_All_0.png", plot = BinaryXGB_All_0, width = 10, height = 10)
+ggsave("BinaryXGB_All_1.png", plot = BinaryXGB_All_1, width = 10, height = 10)
+ggsave("BinaryXGB_All_2.png", plot = BinaryXGB_All_2, width = 10, height = 10)
 
 
 ```

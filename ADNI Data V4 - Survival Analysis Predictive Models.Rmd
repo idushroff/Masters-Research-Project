@@ -64,12 +64,6 @@ Import dataset, Pre-process & set up cross validation
 surv_df <- read.csv("preprocessed_data.csv") 
 #View(surv_df)
 
-# Remove rows with zero survival times
-surv_df <- surv_df %>% filter(VISCODE > 0)
-
-# Check event encoding
-# table(surv_df$event)
-
 # Create survival object
 surv_df1 <- surv_df %>% 
   mutate(diagnosis_surv = Surv(VISCODE, event == "1")) %>%
@@ -89,14 +83,21 @@ Define all the Recipes
 
 # List of different recipes based on specified feature combinations, excluding features with 'dem'
 
-recipes_list <- list(
-  recipe_1 = recipe(diagnosis_surv ~ fam_hist_dad_ad + fam_hist_mum_ad + APOE4 + AGE + PTGENDER + PTEDUCAT + MMSE + mPACCtrailsB, data = surv_df1),
-  recipe_2 = recipe(diagnosis_surv ~ fam_hist_dad_ad + fam_hist_mum_ad + APOE4 + AGE + PTGENDER + PTEDUCAT, data = surv_df1),
-  recipe_3 = recipe(diagnosis_surv ~ fam_hist_dad_ad + fam_hist_mum_ad + APOE4, data = surv_df1),
-  recipe_4 = recipe(diagnosis_surv ~ fam_hist_dad_ad + fam_hist_mum_ad, data = surv_df1),
-  recipe_5 = recipe(diagnosis_surv ~ APOE4 + AGE + PTGENDER + PTEDUCAT + MMSE + mPACCtrailsB, data = surv_df1)
-)
+# D = Demographics 
+# F = Family History
+# DF = Demographics + Family History 
+# DGF = Demographics + Genetics + Family History 
+# DGCF = Demographics + Genetics + Cognition + Family History
+# DGC = Demographics + Genetics + Cognition
 
+recipes_list <- list(
+  recipe_D = recipe(diagnosis_surv ~ AGE + SEX + EDU, data = surv_df1),
+  recipe_F = recipe(diagnosis_surv ~ FH, data = surv_df1),
+  recipe_DF = recipe(diagnosis_surv ~ AGE + SEX + EDU + FH, data = surv_df1),
+  recipe_DGF = recipe(diagnosis_surv ~ AGE + SEX + EDU + APOE4 + FH, data = surv_df1),
+  recipe_DGCF = recipe(diagnosis_surv ~ AGE + SEX + EDU + APOE4 + MMSE + mPACCtrailsB + FH, data = surv_df1),
+  recipe_DGC = recipe(diagnosis_surv ~ APOE4 + AGE + SEX + EDU + MMSE + mPACCtrailsB, data = surv_df1)
+)
 
 
 # Initialize list to store results for each recipe and model

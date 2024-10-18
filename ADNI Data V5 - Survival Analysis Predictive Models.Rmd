@@ -4,7 +4,7 @@ output: html_document
 date: "2023-03-29"
 ---
 
-# ADNI Data V4 - Survival Analysis Predictive Models - same as version 3 except this time I am doing it for all the different recipes
+# ADNI Data Version 5 - Survival Analysis Predictive Models - testing over specific hyperparameter values + trying one recipe over all models
 
 ## Install and load the relevant packages
 
@@ -62,13 +62,7 @@ Import dataset, Pre-process & set up cross validation
 
 # Import preprocessed data 
 surv_df <- read.csv("preprocessed_data.csv") 
-#View(surv_df)
-
-# Remove rows with zero survival times
-surv_df <- surv_df %>% filter(VISCODE > 0)
-
-# Check event encoding
-# table(surv_df$event)
+View(surv_df)
 
 # Create survival object
 surv_df1 <- surv_df %>% 
@@ -81,36 +75,51 @@ set.seed(403)
 repeated_folds <- vfold_cv(surv_df1, v = 5, repeats = 3) # 5-fold cross-validation
 
 # colnames(surv_df1)
-```
 
-Define all the Recipes
+# List of different recipes based on specified feature combinations
 
-```{r}
-
-# List of different recipes based on specified feature combinations, excluding features with 'dem'
+# D = Demographics 
+# F = Family History
+# DF = Demographics + Family History 
+# DGF = Demographics + Genetics + Family History 
+# DGCF = Demographics + Genetics + Cognition + Family History
+# DGC = Demographics + Genetics + Cognition
 
 recipes_list <- list(
-  recipe_1 = recipe(diagnosis_surv ~ fam_hist_dad_ad + fam_hist_mum_ad + APOE4 + AGE + PTGENDER + PTEDUCAT + MMSE + mPACCtrailsB, data = surv_df1),
-  recipe_2 = recipe(diagnosis_surv ~ fam_hist_dad_ad + fam_hist_mum_ad + APOE4 + AGE + PTGENDER + PTEDUCAT, data = surv_df1),
-  recipe_3 = recipe(diagnosis_surv ~ fam_hist_dad_ad + fam_hist_mum_ad + APOE4, data = surv_df1),
-  recipe_4 = recipe(diagnosis_surv ~ fam_hist_dad_ad + fam_hist_mum_ad, data = surv_df1),
-  recipe_5 = recipe(diagnosis_surv ~ APOE4 + AGE + PTGENDER + PTEDUCAT + MMSE + mPACCtrailsB, data = surv_df1)
+  D = recipe(diagnosis_surv ~ AGE + SEX + EDU, data = surv_df1)
+  # Fh = recipe(diagnosis_surv ~ FH, data = surv_df1),
+  # DFh = recipe(diagnosis_surv ~ AGE + SEX + EDU + FH, data = surv_df1),
+  # DGFh = recipe(diagnosis_surv ~ AGE + SEX + EDU + APOE4 + FH, data = surv_df1),
+  # DGCFh = recipe(diagnosis_surv ~ AGE + SEX + EDU + APOE4 + MMSE + mPACCtrailsB + FH, data = surv_df1),
+  # DGC = recipe(diagnosis_surv ~ APOE4 + AGE + SEX + EDU + MMSE + mPACCtrailsB, data = surv_df1)
 )
 
 # Initialize list to store results for each recipe and model
 results_list <- list()
 
-# Define tuning grid for Cox model (penalty) and Random Forest (mtry, min_n)
-cox_grid <- grid_regular(
-  penalty(range = c(0.0001, 1)), # Regularization penalty for Cox model
-  levels = 10                    # 10 values for penalty
+# Define tuning grid for Cox model (regularization penalty)
+cox_grid <- expand.grid(
+  penalty = c(0.01, 0.1, 1, 10, 100),  # Specific values for regularization penalty
+  levels = 1  # Since we're specifying exact values, just set levels to 1
 )
 
-rf_grid <- grid_regular(
-  mtry(range = c(2, 5)),          # Number of features considered at each split (2 to 5)
-  min_n(range = c(1, 10)),        # Minimum number of samples in a leaf (1 to 10)
-  levels = 10                     # 10 values for each hyperparameter
+# View the grid
+print(cox_grid)
+
+
+# Define tuning grid for Random Forest
+rf_grid <- expand.grid(
+  max_depth = c(0, 2, 5, 10),            # Maximum depth of the tree
+  min_samples_split = c(2, 5, 10),       # Minimum samples required to split a node
+  min_n = c(1, 2, 4)                     # Minimum samples in a leaf node
 )
+# View the grid
+print(rf_grid)
+```
+
+Define all the Recipes
+
+```{r}
 
 
 # Iterate through recipes and run models for each
@@ -122,34 +131,60 @@ for (i in seq_along(recipes_list)) {
   # Weibull Model
   survreg_wflow <- workflow() %>% 
     add_recipe(current_recipe) %>% 
-    add_model(survival_reg() %>% set_engine("survival") %>% set_mode("censored regression"))
+    add_model(survival_reg() %>% 
+                set_engine("survival") %>% 
+                set_mode("censored regression"))
   
   # Cox Proportional Hazards Model
   coxnet_wflow <- workflow() %>%
     add_recipe(current_recipe) %>%
-    add_model(proportional_hazards(penalty = tune()) %>% set_engine("glmnet") %>% set_mode("censored regression"))
+    add_model(proportional_hazards(penalty = tune()) %>% 
+                set_engine("glmnet") %>% 
+                set_mode("censored regression"))
 
   # Random Forest Model
   oblique_wflow <- workflow() %>%
     add_recipe(current_recipe) %>%
-    add_model(rand_forest(mtry = tune(), min_n = tune()) %>% set_engine("aorsf") %>% set_mode("censored regression"))
+    add_model(rand_forest(min_n = tune(), 
+                          max_depth = tune(), 
+                          min_samples_split = tune()) %>% 
+                set_engine("aorsf") %>% 
+                set_mode("censored regression"))
   
   # Define evaluation metrics for survival analysis
-  survival_metrics <- metric_set(brier_survival_integrated, brier_survival, roc_auc_survival, concordance_survival)
+  survival_metrics <- metric_set(brier_survival_integrated, 
+                                 roc_auc_survival, 
+                                 concordance_survival)
   
   # Set evaluation time points for metrics
   evaluation_time_points <- seq(0, 144, 6)
 
   # Cross-validation resampling (for all models)
   set.seed(1)
-  survreg_res <- fit_resamples(survreg_wflow, resamples = repeated_folds, metrics = survival_metrics, eval_time = evaluation_time_points, control = control_resamples(save_pred = TRUE))
-  coxnet_res <- tune_grid(coxnet_wflow, resamples = repeated_folds, grid = cox_grid, metrics = survival_metrics, eval_time = evaluation_time_points, control = control_grid(save_pred = TRUE))
-  oblique_res <- tune_grid(oblique_wflow, resamples = repeated_folds, grid = rf_grid, metrics = survival_metrics, eval_time = evaluation_time_points, control = control_grid(save_pred = TRUE))
+  survreg_res <- fit_resamples(survreg_wflow, 
+                               resamples = repeated_folds, 
+                               metrics = survival_metrics, 
+                               eval_time = evaluation_time_points, 
+                               control = control_resamples(save_pred = TRUE))
+  
+  coxnet_res <- tune_grid(coxnet_wflow, 
+                          resamples = repeated_folds, 
+                          grid = cox_grid, 
+                          metrics = survival_metrics, 
+                          eval_time = evaluation_time_points, 
+                          control = control_grid(save_pred = TRUE))
+  
+  oblique_res <- tune_grid(oblique_wflow, 
+                           resamples = repeated_folds, 
+                           grid = rf_grid, 
+                           metrics = survival_metrics, 
+                           eval_time = evaluation_time_points, 
+                           control = control_grid(save_pred = TRUE))
   
   # Store the results for each model
-  results_list[[paste0("Recipe_", i, "_Weibull")]] <- survreg_res
-  results_list[[paste0("Recipe_", i, "_Cox")]] <- coxnet_res
-  results_list[[paste0("Recipe_", i, "_RandomForest")]] <- oblique_res
+  results_list[[paste0("Feature_Set_", i, "_Weibull")]] <- survreg_res
+  results_list[[paste0("Feature_Set_", i, "_Cox")]] <- coxnet_res
+  results_list[[paste0("Feature_Set_", i, "_RandomForest")]] <- oblique_res
 }
 
 ```
@@ -161,7 +196,7 @@ for (i in seq_along(recipes_list)) {
 # Function to extract and prepare metrics for plotting
 prepare_plot_data <- function(result, model_name, recipe_name) {
   collect_metrics(result) %>%
-    mutate(model = model_name, recipe = recipe_name)
+    mutate(Model = model_name, recipe = recipe_name)
 }
 
 # Initialize an empty data frame to store all metrics
@@ -170,30 +205,49 @@ all_metrics <- data.frame()
 # Loop through results and extract metrics for each model and recipe
 for (name in names(results_list)) {
   model_name <- str_extract(name, "Weibull|Cox|RandomForest")
-  recipe_name <- str_extract(name, "Recipe_\\d+")
-  
+  recipe_name <- str_extract(name, "(?<=Feature_Set_)[^_]+")  
   metrics_data <- prepare_plot_data(results_list[[name]], model_name, recipe_name)
   all_metrics <- bind_rows(all_metrics, metrics_data)
 }
 
+
 # Plot Brier score and ROC AUC for all models and recipes
-box_plot <- ggplot(all_metrics, aes(x = recipe, y = mean, fill = model)) +
+SurvivalAllModels_0 <- ggplot(all_metrics, aes(x = recipe, y = mean, fill = Model)) +
   geom_boxplot() +
   facet_wrap(~.metric, scales = "free_y") +
-  labs(title = "Model Comparison Across Recipes", x = "Recipe", y = "Metric Value") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  labs(title = "Model Comparison Across Recipes", x = "Feature Set(s)", y = "Metric Value") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  theme_light(base_size = 13) + 
+  theme(legend.position = 'bottom')
+
+# Print the box plot
+print(SurvivalAllModels_0)
 
 
-
-# Create a custom legend for recipes
-recipe_legend <- textGrob("Recipes: \n1. Family History + Genetics + Demographics + Cognition \n2. Family History + Genetics + Demographics \n3. Family History + Genetics \n4. Family History \n5. Demographics + Genetics + Cognition\n", 
+# Custom legend (optional)
+recipe_legend1 <- textGrob("Feature set: \n1. Demographics (D) = Age, Gender, Education \n2. Family History (Fh) = Mother or Father had Alzheimer's \n3. Genetics (G) = APOE4 \n4. Cognitive Tests (C) = MMSE, mPACCtrailsB \n", 
                            gp = gpar(fontsize = 10), 
                            hjust = 0)
 
-#################################
+# Combine the box plot and the legend
+SurvivalAllModels_1 <- grid.arrange(SurvivalAllModels_0, recipe_legend1, ncol = 1, heights = c(3, 1))
+print(SurvivalAllModels_1)
 
-# Combine the box plot and the recipe legend
-grid.arrange(box_plot, recipe_legend, ncol = 1, heights = c(3, 1))
+# Custom legend (optional)
+recipe_legend2 <- textGrob("Feature set: \n1. Demographics (D) \n2. Family History (DFh) \n3. Demographics + Family History (DFh) \n4. Demographics + Genetics + Family History (DGFh) \n5. Demographics + Genetics + Cognition + Family History (DGCFh) \n6. Demographics + Genetics + Cognition (DGC) \n",
+                           gp = gpar(fontsize = 10),
+                           hjust = 0)
+
+# Combine the box plot and the legend
+SurvivalAllModels_2 <- grid.arrange(SurvivalAllModels_0, recipe_legend2, ncol = 1, heights = c(3, 1))
+print(SurvivalAllModels_2)
+
+# Save the updated plot
+ggsave("SurvivalAllModels_0.png", plot = SurvivalAllModels_0, width = 10, height = 10)
+ggsave("SurvivalAllModels_1.png", plot = SurvivalAllModels_1, width = 10, height = 10)
+ggsave("SurvivalAllModels_2.png", plot = SurvivalAllModels_2, width = 10, height = 10)
+
+
 ```
 
 -   Notes:

@@ -53,14 +53,14 @@ library(grid)
 ```{r}
 # Import preprocessed data 
 surv_df <- read.csv("preprocessed_data.csv")
-# View(surv_df)
+View(surv_df)
 
 # Convert the event column to a factor
 surv_df$event <- factor(surv_df$event, levels = c(0, 1), labels = c("No AD", "AD"))
 
-# Convert PTGENDER to numeric (0 for Male, 1 for Female)
+# Convert SEX to numeric (0 for Male, 1 for Female)
 surv_df <- surv_df %>%
-  mutate(PTGENDER = ifelse(PTGENDER == "Male", 0, 1))
+  mutate(SEX = ifelse(SEX == "Male", 0, 1))
 
 # Set seed for reproducibility
 set.seed(123)
@@ -70,19 +70,20 @@ cv_folds <- vfold_cv(surv_df, v = 5, repeats = 3)
 
 # List of different recipes based on specified feature combinations
 
-# Family History <- fam_hist_dad_ad + fam_hist_mum_ad
-# Demographics <- AGE + PTGENDER + PTEDUCAT
-# Genetics <- APOE4
-# Cognitive Tests <- MMSE + mPACCtrailsB
+# D = Demographics 
+# F = Family History
+# DF = Demographics + Family History 
+# DGF = Demographics + Genetics + Family History 
+# DGCF = Demographics + Genetics + Cognition + Family History
+# DGC = Demographics + Genetics + Cognition
 
 recipes_list <- list(
-  recipe_1 = recipe(event ~ fam_hist_dad_ad + fam_hist_mum_ad + APOE4 + AGE + PTGENDER + PTEDUCAT + MMSE + mPACCtrailsB, data = surv_df),
-  recipe_2 = recipe(event ~ fam_hist_dad_ad + fam_hist_mum_ad + APOE4 + AGE + PTGENDER + PTEDUCAT, data = surv_df),
-  recipe_3 = recipe(event ~ fam_hist_dad_ad + fam_hist_mum_ad + APOE4, data = surv_df),
-  recipe_4 = recipe(event ~ fam_hist_dad_ad + fam_hist_mum_ad, data = surv_df),
-  recipe_5 = recipe(event ~ APOE4 + AGE + PTGENDER + PTEDUCAT + MMSE + mPACCtrailsB, data = surv_df)
-)
-
+  recipe_D = recipe(event ~ AGE + SEX + EDU, data = surv_df),
+  recipe_F = recipe(event ~ FH, data = surv_df),
+  recipe_DF = recipe(event ~ AGE + SEX + EDU + FH, data = surv_df),
+  recipe_DGF = recipe(event ~ AGE + SEX + EDU + APOE4 + FH, data = surv_df),
+  recipe_DGCF = recipe(event ~ AGE + SEX + EDU + APOE4 + MMSE + mPACCtrailsB + FH, data = surv_df),
+  recipe_DGC = recipe(event ~ APOE4 + AGE + SEX + EDU + MMSE + mPACCtrailsB, data = surv_df))
 
 # Initialize list to store results for each recipe and model
 results_list <- list()
@@ -221,7 +222,7 @@ summary_metrics
 ggplot(summary_metrics, aes(x = recipe, y = .estimate, fill = model)) +
   geom_boxplot() +
   facet_wrap(~ .metric, scales = "free_y") +
-  labs(title = "Model Comparison Across Recipes", x = "Recipe", y = "Metric Value") +
+  labs(title = "Model Comparison Across Recipes", x = "Feature Set(s)", y = "Metric Value") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 #################################
@@ -238,13 +239,22 @@ roc_auc_metrics
 box_plot <- ggplot(roc_auc_metrics, aes(x = recipe, y = .estimate, fill = model)) +
   geom_boxplot() +
   labs(title = "ROC AUC Comparison Across Recipes and Models", 
-       x = "Recipe", 
+       x = "Feature Set(s)", 
        y = "ROC AUC Value") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  scale_y_continuous(limits = c(0.5, 1))
+  scale_y_continuous(limits = c(0.5, 1)) + 
+  theme_light(base_size = 16) + 
+  theme(legend.position = 'bottom')
+
+# D = Demographics 
+# F = Family History
+# DF = Demographics + Family History 
+# DGF = Demographics + Genetics + Family History 
+# DGCF = Demographics + Genetics + Cognition + Family History
+# DGC = Demographics + Genetics + Cognition
 
 # Create a custom legend for recipes
-recipe_legend <- textGrob("Recipes: \n1. Family History + Genetics + Demographics + Cognition \n2. Family History + Genetics + Demographics \n3. Family History + Genetics \n4. Family History \n5. Demographics + Genetics + Cognition\n", 
+recipe_legend <- textGrob("Feature sets: \n1. D = Demographics \n2. F = Family History \n3. DF = Demographics + Family History + Genetics \n4. DGF = Demographics + Genetics + Family History \n5. DGCF = Demographics + Genetics + Cognition + Family History \n6. DGC = Demographics + Genetics + Cognition \n", 
                            gp = gpar(fontsize = 10), 
                            hjust = 0)
 
@@ -253,5 +263,9 @@ recipe_legend <- textGrob("Recipes: \n1. Family History + Genetics + Demographic
 # Combine the box plot and the recipe legend
 grid.arrange(box_plot, recipe_legend, ncol = 1, heights = c(3, 1))
 
+#############################################
+
+# Save the plot
+ggsave("BinaryCPlot1.png", plot = box_plot, width = 6, height = 4)
 
 ```

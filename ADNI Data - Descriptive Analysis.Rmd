@@ -256,7 +256,6 @@ non_progressors <- df %>% group_by(RID) %>% arrange(VISCODE) %>% filter(!any(DX=
 view(non_progressors)
 
 
-
 surv_df <- rbind(progressors, non_progressors) %>% mutate(event=as.numeric(DX=="AD"))
 View(surv_df)
 
@@ -729,6 +728,21 @@ print(ggsurv_education$plot)
 ## Save preprocessed data to a CSV file for Predictive Analysis
 
 ```{r}
+
+# Remove rows with zero survival times
+surv_df <- surv_df %>% filter(VISCODE > 0)
+
+# Check event encoding
+# table(surv_df$event)
+
+# Create the new column 'FH' by adding 'fam_hist_dad_ad' and 'fam_hist_mum_ad'
+surv_df$FH <- surv_df$fam_hist_dad_ad + surv_df$fam_hist_mum_ad
+# surv_df
+
+# Rename multiple columns using base R
+names(surv_df)[names(surv_df) == "PTGENDER"] <- "SEX"
+names(surv_df)[names(surv_df) == "PTEDUCAT"] <- "EDU"
+# View(surv_df)
 
 # Save preprocessed data to a CSV file
 write.csv(surv_df, "preprocessed_data.csv", row.names=FALSE)
