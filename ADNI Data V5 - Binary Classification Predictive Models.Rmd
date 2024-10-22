@@ -82,7 +82,7 @@ recipes_list <- list(
   # Fh = recipe(event ~ FH, data = surv_df),
   # DFh = recipe(event ~ AGE + SEX + EDU + FH, data = surv_df),
   # DGFh = recipe(event ~ AGE + SEX + EDU + APOE4 + FH, data = surv_df),
-  # DGCFh = recipe(event ~ AGE + SEX + EDU + APOE4 + MMSE + mPACCtrailsB + FH, data = surv_df1),
+  # DGCFh = recipe(event ~ AGE + SEX + EDU + APOE4 + MMSE + mPACCtrailsB + FH, data = surv_df)
   # DGC = recipe(event ~ APOE4 + AGE + SEX + EDU + MMSE + mPACCtrailsB, data = surv_df)
 )
 
@@ -116,8 +116,8 @@ print(rf_grid)
 # Define hyperparameter grids for XGBoost
 xgb_grid <- expand.grid(
   # trees = 200,
-  learn_rate = c(0.03, 0.08, 0.2, 0.5),
-  tree_depth = c(2, 5)
+  learn_rate = c(0.03, 0.08, 0.3, 0.5),
+  tree_depth = c(2, 6)
 )
 print(xgb_grid)
 ```
@@ -151,7 +151,7 @@ for (i in seq_along(recipes_list)) {
   # Tuned XGBoost
   xgb_wflow <- workflow() %>%
     add_recipe(current_recipe) %>%
-    add_model(boost_tree(trees = 200, 
+    add_model(boost_tree(trees = 15, 
                          tree_depth = tune(), 
                          learn_rate = tune()) %>%
                 set_engine("xgboost", objective = "binary:logistic") %>%
@@ -215,7 +215,7 @@ summary_metrics <- all_metricsv5 %>%
 BinaryAllModels_0 <- ggplot(summary_metrics, aes(x = feature_set, y = .estimate, fill = Model)) +
   geom_boxplot() +
   facet_wrap(~ .metric, scales = "free_y") +
-  labs(title = "Binary Classification - Demographics Across All Model", 
+  labs(title = "Binary Classification - Demographics Across All Models", 
        x = "Feature Set(s)", 
        y = "Metric Value") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
@@ -228,32 +228,27 @@ print(BinaryAllModels_0)
 
 
 # Custom legend (optional)
-recipe_legend1 <- textGrob("Feature set: \n1. Demographics (D) = Age, Gender, Education \n2. Family History (Fh) = Mother or Father had Alzheimer's \n3. Genetics (G) = APOE4 \n4. Cognitive Tests (C) = MMSE, mPACCtrailsB \n", 
-                           gp = gpar(fontsize = 10), 
-                           hjust = 0)
+# recipe_legend1 <- textGrob("Feature set: \n1. Demographics (D) = Age, Gender, Education \n2. Family History (Fh) = Mother or Father had Alzheimer's \n3. Genetics (G) = APOE4 \n4. Cognitive Tests (C) = MMSE, mPACCtrailsB \n", 
+                           # gp = gpar(fontsize = 10), 
+                           # hjust = 0)
 
 # Combine the box plot and the legend
-BinaryAllModels_1 <- grid.arrange(BinaryAllModels_0, recipe_legend1, ncol = 1, heights = c(3, 1))
-print(BinaryAllModels_1)
+# BinaryAllModels_1 <- grid.arrange(BinaryAllModels_0, recipe_legend1, ncol = 1, heights = c(3, 1))
+# print(BinaryAllModels_1)
 
 # Custom legend (optional)
-recipe_legend2 <- textGrob("Feature set: \n1. Demographics (D) \n2. Family History (Fh) \n3. Demographics + Family History (DFh) \n4. Demographics + Genetics + Family History (DGFh) \n5. Demographics + Genetics + Cognition + Family History (DGCFh) \n6. Demographics + Genetics + Cognition (DGC) \n",
-                           gp = gpar(fontsize = 10),
-                           hjust = 0)
+# recipe_legend2 <- textGrob("Feature set: \n1. Demographics (D) \n2. Family History (Fh) \n3. Demographics + Family History (DFh) \n4. Demographics + Genetics + Family History (DGFh) \n5. Demographics + Genetics + Cognition + Family History (DGCFh) \n6. Demographics + Genetics + Cognition (DGC) \n",
+                           # gp = gpar(fontsize = 10),
+                           # hjust = 0)
 
 # Combine the box plot and the legend
-BinaryAllModels_2 <- grid.arrange(BinaryAllModels_0, recipe_legend2, ncol = 1, heights = c(3, 1))
-print(BinaryAllModels_2)
+# BinaryAllModels_2 <- grid.arrange(BinaryAllModels_0, recipe_legend2, ncol = 1, heights = c(3, 1))
+# print(BinaryAllModels_2)
 
 # Save the updated plot
 ggsave("Binary_All_Models_0.png", plot = BinaryAllModels_0, width = 10, height = 10)
-ggsave("Binary_All_Models_1.png", plot = BinaryAllModels_1, width = 10, height = 10)
-ggsave("Binary_All_Models_2.png", plot = BinaryAllModels_2, width = 10, height = 10)
-
-
-```
-
-```{r}
+# ggsave("Binary_All_Models_1.png", plot = BinaryAllModels_1, width = 10, height = 10)
+# ggsave("Binary_All_Models_2.png", plot = BinaryAllModels_2, width = 10, height = 10)
 
 
 ```

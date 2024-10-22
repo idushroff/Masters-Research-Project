@@ -54,6 +54,9 @@ library(doParallel)
 # Set up parallel processing
 registerDoParallel()
 
+# Load the randomForestSRC package
+# install.packages("randomForestSRC")
+# library(randomForestSRC)
 ```
 
 Import dataset, Pre-process & set up cross validation
@@ -99,27 +102,22 @@ results_list <- list()
 
 # Define tuning grid for Cox model (regularization penalty)
 cox_grid <- expand.grid(
-  penalty = c(0.01, 0.1, 1, 10, 100)  # Specific values for regularization penalty
+  penalty = c(0.01, 0.1, 1, 10, 100) # Specific values for regularization penalty
 )
-
-# View the grid
-print(cox_grid)
 
 
 # Define tuning grid for Random Forest
 rf_grid <- expand.grid(
-  max_depth = c(0, 2, 5, 10),            # Maximum depth of the tree
-  min_samples_split = c(2, 5, 10),     # Minimum samples required to split a node
-  min_samples_leaf = c(1, 2, 4) # Minimum samples in a leaf node
+  mtry = c(2, 3, 4),  # Number of variables randomly sampled at each split
+  min_n = c(1, 2, 4)  # Minimum number of samples in a terminal node
 )
-# View the grid
-print(rf_grid)
+
+
 ```
 
 Define all the Recipes
 
 ```{r}
-
 
 # Iterate through recipes and run models for each
 for (i in seq_along(recipes_list)) {
@@ -128,29 +126,30 @@ for (i in seq_along(recipes_list)) {
   
   # Define models: Weibull, Cox, Random Forest
   # Weibull Model
-  survreg_wflow <- workflow() %>% 
-    add_recipe(current_recipe) %>% 
-    add_model(survival_reg() %>% 
-                set_engine("survival") %>% 
-                set_mode("censored regression"))
-  
-  # Cox Proportional Hazards Model
-  coxnet_wflow <- workflow() %>%
+  survreg_wflow <- workflow() %>%
     add_recipe(current_recipe) %>%
-    add_model(proportional_hazards(penalty = tune()) %>% 
-                set_engine("glmnet") %>% 
+    add_model(survival_reg() %>%
+                set_engine("survival") %>%
                 set_mode("censored regression"))
 
-  # Random Forest Model
+  # Cox Proportional Hazards Model
+  coxnet_wflow <- workflow() %>%
+     add_recipe(current_recipe) %>%
+     add_model(proportional_hazards(penalty = tune()) %>% 
+                 set_engine("glmnet") %>% 
+                 set_mode("censored regression"))
+
+
+  # Random Forest Workflow
   oblique_wflow <- workflow() %>%
     add_recipe(current_recipe) %>%
-    add_model(rand_forest(trees = 1000,
-                          max_depth = tune(), 
-                          min_samples_split = tune(),
-                          min_samples_leaf = tune()) %>% 
-                set_engine("ranger") %>% 
+    add_model(rand_forest(trees = 1000, 
+                          mtry = tune(), 
+                          min_n = tune()) %>%
+                set_engine("aorsf") %>%
                 set_mode("censored regression"))
-  
+
+
 
   # Define evaluation metrics for survival analysis
   survival_metrics <- metric_set(brier_survival_integrated, 
@@ -183,9 +182,9 @@ for (i in seq_along(recipes_list)) {
                            control = control_grid(save_pred = TRUE))
   
   # Store the results for each model
-  results_list[[paste0("Feature_Set_", i, "_Weibull")]] <- survreg_res
-  results_list[[paste0("Feature_Set_", i, "_Cox")]] <- coxnet_res
-  results_list[[paste0("Feature_Set_", i, "_RandomForest")]] <- oblique_res
+  results_list[[paste0("Feature_Set_", names(recipes_list)[i], "_Weibull")]] <- survreg_res
+  results_list[[paste0("Feature_Set_", names(recipes_list)[i], "_Cox")]] <- coxnet_res
+  results_list[[paste0("Feature_Set_", names(recipes_list)[i], "_RandomForest")]] <- oblique_res
 }
 
 ```
@@ -216,7 +215,7 @@ for (name in names(results_list)) {
 SurvivalAllModels_0 <- ggplot(all_metrics, aes(x = recipe, y = mean, fill = Model)) +
   geom_boxplot() +
   facet_wrap(~.metric, scales = "free_y") +
-  labs(title = "Model Comparison Across Recipes", x = "Feature Set(s)", y = "Metric Value") +
+  labs(title = "Survival Analysis - Demographics Across All Models", x = "Feature Set(s)", y = "Metric Value") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
   theme_light(base_size = 13) + 
   theme(legend.position = 'bottom')
@@ -226,32 +225,32 @@ print(SurvivalAllModels_0)
 
 
 # Custom legend (optional)
-recipe_legend1 <- textGrob("Feature set: \n1. Demographics (D) = Age, Gender, Education \n2. Family History (Fh) = Mother or Father had Alzheimer's \n3. Genetics (G) = APOE4 \n4. Cognitive Tests (C) = MMSE, mPACCtrailsB \n", 
-                           gp = gpar(fontsize = 10), 
-                           hjust = 0)
+# recipe_legend1 <- textGrob("Feature set: \n1. Demographics (D) = Age, Gender, Education \n2. Family History (Fh) = Mother or Father had Alzheimer's \n3. Genetics (G) = APOE4 \n4. Cognitive Tests (C) = MMSE, mPACCtrailsB \n", 
+                           # gp = gpar(fontsize = 10), 
+                           # hjust = 0)
 
 # Combine the box plot and the legend
-SurvivalAllModels_1 <- grid.arrange(SurvivalAllModels_0, recipe_legend1, ncol = 1, heights = c(3, 1))
-print(SurvivalAllModels_1)
+# SurvivalAllModels_1 <- grid.arrange(SurvivalAllModels_0, recipe_legend1, ncol = 1, heights = c(3, 1))
+# print(SurvivalAllModels_1)
 
 # Custom legend (optional)
-recipe_legend2 <- textGrob("Feature set: \n1. Demographics (D) \n2. Family History (DFh) \n3. Demographics + Family History (DFh) \n4. Demographics + Genetics + Family History (DGFh) \n5. Demographics + Genetics + Cognition + Family History (DGCFh) \n6. Demographics + Genetics + Cognition (DGC) \n",
-                           gp = gpar(fontsize = 10),
-                           hjust = 0)
+# recipe_legend2 <- textGrob("Feature set: \n1. Demographics (D) \n2. Family History (DFh) \n3. Demographics + Family History (DFh) \n4. Demographics + Genetics + Family History (DGFh) \n5. Demographics + Genetics + Cognition + Family History (DGCFh) \n6. Demographics + Genetics + Cognition (DGC) \n",
+                           # gp = gpar(fontsize = 10),
+                           # hjust = 0)
 
 # Combine the box plot and the legend
-SurvivalAllModels_2 <- grid.arrange(SurvivalAllModels_0, recipe_legend2, ncol = 1, heights = c(3, 1))
-print(SurvivalAllModels_2)
+# SurvivalAllModels_2 <- grid.arrange(SurvivalAllModels_0, recipe_legend2, ncol = 1, heights = c(3, 1))
+# print(SurvivalAllModels_2)
 
 # Save the updated plot
 ggsave("SurvivalAllModels_0.png", plot = SurvivalAllModels_0, width = 10, height = 10)
-ggsave("SurvivalAllModels_1.png", plot = SurvivalAllModels_1, width = 10, height = 10)
-ggsave("SurvivalAllModels_2.png", plot = SurvivalAllModels_2, width = 10, height = 10)
+# ggsave("SurvivalAllModels_1.png", plot = SurvivalAllModels_1, width = 10, height = 10)
+# ggsave("SurvivalAllModels_2.png", plot = SurvivalAllModels_2, width = 10, height = 10)
 
 
 ```
 
--   Notes:
+-    Notes:
 
 -   **Brier Survival** (Top left): This metric evaluates the accuracy of survival probability predictions. Lower values indicate better model performance. In this plot, we see the Cox model (red) has more variability in some recipes, while the RandomForest and Weibull models (green, blue) show less variation and seem to perform more consistently across recipes.
 
