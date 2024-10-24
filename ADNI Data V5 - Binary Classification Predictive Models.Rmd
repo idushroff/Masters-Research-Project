@@ -49,6 +49,8 @@ library(grid)
 
 ```
 
+# SETUP
+
 ```{r}
 
 # Import preprocessed data 
@@ -78,33 +80,18 @@ cv_folds <- vfold_cv(surv_df, v = 5, repeats = 3)
 # DGC = Demographics + Genetics + Cognition
 
 recipes_list <- list(
-  D = recipe(event ~ AGE + SEX + EDU, data = surv_df)
-  # Fh = recipe(event ~ FH, data = surv_df),
-  # DFh = recipe(event ~ AGE + SEX + EDU + FH, data = surv_df),
-  # DGFh = recipe(event ~ AGE + SEX + EDU + APOE4 + FH, data = surv_df),
-  # DGCFh = recipe(event ~ AGE + SEX + EDU + APOE4 + MMSE + mPACCtrailsB + FH, data = surv_df)
-  # DGC = recipe(event ~ APOE4 + AGE + SEX + EDU + MMSE + mPACCtrailsB, data = surv_df)
+  D = recipe(event ~ AGE + SEX + EDU, data = surv_df),
+  Fh = recipe(event ~ FH, data = surv_df),
+  DFh = recipe(event ~ AGE + SEX + EDU + FH, data = surv_df),
+  DGFh = recipe(event ~ AGE + SEX + EDU + APOE4 + FH, data = surv_df),
+  DGCFh = recipe(event ~ AGE + SEX + EDU + APOE4 + MMSE + mPACCtrailsB + FH, data = surv_df),
+  DGC = recipe(event ~ APOE4 + AGE + SEX + EDU + MMSE + mPACCtrailsB, data = surv_df)
 )
 
 
 # Initialize list to store results for each recipe and model
 results_list <- list()
 
-# # Define hyperparameters and initialize models for Logistic Regression, Random Forest, and XGBoost
-# hyperparameter_table <- data.frame(
-#   Algorithm = c("Logistic Regression", "Random Forest", "XGBoost"),
-#   Hyperparameters = I(list(
-#     list("No hyperparameters were tuned"),  # Logistic Regression
-#     list("trees" = 1000,                    # Random Forest
-#          "mtry" = c(3, 5, 7), 
-#          "min_n" = c(5, 10, 20)), 
-#     list("trees" = 200,                     # XGBoost
-#          "learn_rate" = c(0.03, 0.08, 0.2, 0.5), 
-#          "tree_depth" = c(2, 5))
-#   ))
-# )
-# View the hyperparameter table
-# print(hyperparameter_table)
 
 # Define hyperparameter grids for Random Forest
 rf_grid <- expand.grid(
@@ -112,17 +99,18 @@ rf_grid <- expand.grid(
   mtry = c(3, 5, 7),
   min_n = c(5, 10, 20)
 )
-print(rf_grid)
+# print(rf_grid)
+
 # Define hyperparameter grids for XGBoost
 xgb_grid <- expand.grid(
   # trees = 200,
   learn_rate = c(0.03, 0.08, 0.3, 0.5),
   tree_depth = c(2, 6)
 )
-print(xgb_grid)
+# print(xgb_grid)
 ```
 
-UPDATE - change recipe to feature set
+# TRAIN
 
 ```{r}
 
@@ -185,8 +173,12 @@ for (i in seq_along(recipes_list)) {
   results_list[[paste0("Feature_Set_", names(recipes_list)[i], "_XGBoost")]] <- xgb_res
 }
 
+```
 
-  
+# PLOT
+
+```{r}
+
 # Function to extract and prepare metrics for plotting
 prepare_plot_data <- function(result, model_name, feature_set_name) {
   collect_metrics(result, summarize = FALSE) %>%
@@ -210,6 +202,8 @@ for (name in names(results_list)) {
 # Summarize metrics for plotting
 summary_metrics <- all_metricsv5 %>%
   group_by(feature_set, Model, .metric)
+summary_metrics
+####################################
 
 # Plot ROC AUC for all models and feature sets
 BinaryAllModels_0 <- ggplot(summary_metrics, aes(x = feature_set, y = .estimate, fill = Model)) +
@@ -226,29 +220,144 @@ BinaryAllModels_0 <- ggplot(summary_metrics, aes(x = feature_set, y = .estimate,
 # Print the box plot
 print(BinaryAllModels_0)
 
-
-# Custom legend (optional)
-# recipe_legend1 <- textGrob("Feature set: \n1. Demographics (D) = Age, Gender, Education \n2. Family History (Fh) = Mother or Father had Alzheimer's \n3. Genetics (G) = APOE4 \n4. Cognitive Tests (C) = MMSE, mPACCtrailsB \n", 
-                           # gp = gpar(fontsize = 10), 
-                           # hjust = 0)
-
-# Combine the box plot and the legend
-# BinaryAllModels_1 <- grid.arrange(BinaryAllModels_0, recipe_legend1, ncol = 1, heights = c(3, 1))
-# print(BinaryAllModels_1)
-
-# Custom legend (optional)
-# recipe_legend2 <- textGrob("Feature set: \n1. Demographics (D) \n2. Family History (Fh) \n3. Demographics + Family History (DFh) \n4. Demographics + Genetics + Family History (DGFh) \n5. Demographics + Genetics + Cognition + Family History (DGCFh) \n6. Demographics + Genetics + Cognition (DGC) \n",
-                           # gp = gpar(fontsize = 10),
-                           # hjust = 0)
-
-# Combine the box plot and the legend
-# BinaryAllModels_2 <- grid.arrange(BinaryAllModels_0, recipe_legend2, ncol = 1, heights = c(3, 1))
-# print(BinaryAllModels_2)
-
 # Save the updated plot
 ggsave("Binary_All_Models_0.png", plot = BinaryAllModels_0, width = 10, height = 10)
-# ggsave("Binary_All_Models_1.png", plot = BinaryAllModels_1, width = 10, height = 10)
-# ggsave("Binary_All_Models_2.png", plot = BinaryAllModels_2, width = 10, height = 10)
+```
+
+# TABLE
+
+```{r}
+
+# First, collect the best tuning parameters for Random Forest and XGBoost
+# This will give you the best parameter values for each fold and repeat combination
+
+# For Random Forest (rf_res)
+rf_best_params <- rf_res %>%
+  select_best(metric = "roc_auc") %>%
+  mutate(Model = "RF")
+
+# For XGBoost (xgb_res)
+xgb_best_params <- xgb_res %>%
+  select_best(metric = "roc_auc") %>%
+  mutate(Model = "XGBoost")
+
+# Combine all the best tuning parameters together
+# Adding in the columns 'min_n', 'mtry', 'tree_depth', 'learn_rate' where applicable
+best_params <- bind_rows(rf_best_params, xgb_best_params)
+
+# Now, calculate the summary statistics (Median, Q1, Q3) for each feature set and model
+summary_metrics <- all_metricsv5 %>%
+  group_by(feature_set, Model, .metric) %>%
+  summarize(
+    Median = median(.estimate, na.rm = TRUE),
+    Q1 = quantile(.estimate, 0.25, na.rm = TRUE),
+    Q3 = quantile(.estimate, 0.75, na.rm = TRUE)
+  )
+
+# Join the summary statistics with the best tuning parameters
+final_summary <- summary_metrics %>%
+  left_join(best_params, by = "Model")
+# View the final table
+# print(final_summary)
+ 
+# Filter for rows where .metric == "roc_auc" and round the numeric columns to 3 decimal places
+roc_auc_summary <- final_summary %>%
+  filter(.metric == "roc_auc") %>%
+  mutate(across(c(Median, Q1, Q3), round, 3))  # Round Median, Q1, Q3 to 3 decimal places
+
+# Print the filtered summary table
+print(roc_auc_summary)
+
+# Save the final table with median, quartiles, and tuning parameters as a CSV
+write.csv(final_summary, "summary_metrics_with_tuning_params.csv", row.names = FALSE)
+
+```
+
+```{r}
+
+# Import preprocessed data 
+UKBB_subset <- read.csv("UKBB_subset.csv")
+# View(surv_df)
+
+# Convert the event column to a factor
+UKBB_subset$conv <- factor(UKBB_subset$conv, levels = c(0, 1), labels = c("No AD", "AD"))
+
+recipes_list <- list(
+  D = recipe(event ~ AGE + SEX + EDU, data = surv_df),
+  Fh = recipe(event ~ FH, data = surv_df),
+  DFh = recipe(event ~ AGE + SEX + EDU + FH, data = surv_df),
+  DGFh = recipe(event ~ AGE + SEX + EDU + APOE4 + FH, data = surv_df),
+  DGCFh = recipe(event ~ AGE + SEX + EDU + APOE4 + MMSE + mPACCtrailsB + FH, data = surv_df),
+  DGC = recipe(event ~ APOE4 + AGE + SEX + EDU + MMSE + mPACCtrailsB, data = surv_df)
+)
+  
+# Logistic Regression with alpha and l1_ratio tuning
+final_glm_wflow <- workflow() %>%
+  add_recipe(recipes_list[["Fh"]]) %>%
+  add_model(logistic_reg() %>%
+              set_engine("glm") %>%
+              set_mode("classification"))
+  
+final_glm_fit <- final_glm_wflow %>%
+  fit(data = surv_df)
+
+# Fit XGBoost using the best feature sets (D and DFh) and the best hyperparameters
+final_xgb_wflow_D <- workflow() %>%
+  add_recipe(recipes_list[["D"]]) %>%
+  add_model(boost_tree(trees = 15, 
+                       tree_depth = 2, 
+                       learn_rate = 0.3) %>%
+              set_engine("xgboost", objective = "binary:logistic") %>%
+              set_mode("classification"))
+
+final_xgb_wflow_DFh <- workflow() %>%
+  add_recipe(recipes_list[["DFh"]]) %>%
+  add_model(boost_tree(trees = 15, 
+                       tree_depth = 2, 
+                       learn_rate = 0.3) %>%
+              set_engine("xgboost", objective = "binary:logistic") %>%
+              set_mode("classification"))
+
+final_xgb_fit_D <- final_xgb_wflow_D %>%
+  fit(data = surv_df)
+
+final_xgb_fit_DFh <- final_xgb_wflow_DFh %>%
+  fit(data = surv_df)
+
+# Predict on the UKBB dataset using Logistic Regression
+glm_preds <- predict(final_glm_fit, new_data = UKBB_subset, type = "prob") %>%
+  bind_cols(predict(final_glm_fit, new_data = UKBB_subset)) %>%
+  bind_cols(UKBB_subset)
+
+# Predict on the UKBB dataset using XGBoost (D feature set)
+xgb_preds_D <- predict(final_xgb_fit_D, new_data = UKBB_subset, type = "prob") %>%
+  bind_cols(predict(final_xgb_fit_D, new_data = UKBB_subset)) %>%
+  bind_cols(UKBB_subset)
+
+# Predict on the UKBB dataset using XGBoost (DFh feature set)
+xgb_preds_DFh <- predict(final_xgb_fit_DFh, new_data = UKBB_subset, type = "prob") %>%
+  bind_cols(predict(final_xgb_fit_DFh, new_data = UKBB_subset)) %>%
+  bind_cols(UKBB_subset)
+
+# Evaluate Logistic Regression performance
+glm_metrics <- glm_preds %>%
+  metrics(truth = conv, estimate = .pred_class, .pred_AD) %>%
+  filter(.metric %in% c("accuracy", "roc_auc"))
+
+# Evaluate XGBoost (D) performance
+xgb_metrics_D <- xgb_preds_D %>%
+  metrics(truth = conv, estimate = .pred_class, .pred_AD) %>%
+  filter(.metric %in% c("accuracy", "roc_auc"))
+
+# Evaluate XGBoost (DFh) performance
+xgb_metrics_DFh <- xgb_preds_DFh %>%
+  metrics(truth = conv, estimate = .pred_class, .pred_AD) %>%
+  filter(.metric %in% c("accuracy", "roc_auc"))
+
+# Print results for each model
+print(glm_metrics)
+print(xgb_metrics_D)
+print(xgb_metrics_DFh)
 
 
 ```

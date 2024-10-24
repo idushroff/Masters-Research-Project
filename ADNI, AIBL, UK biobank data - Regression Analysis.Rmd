@@ -124,6 +124,15 @@ gg_miss_var(convertors) + ggtitle("Missing Values in Each Column of convertors D
 vis_miss(convertors) + labs(title = "Heatmap of Missing Values in convertors Dataset")
 ```
 
+# Save preprocessed data to a CSV file
+
+```{r}
+
+write.csv(ADNI, "ADNI_subset.csv", row.names=FALSE)
+write.csv(AIBL, "AIBL_subset.csv", row.names=FALSE)
+write.csv(UKBB, "UKBB_subset.csv", row.names=FALSE)
+```
+
 ### Table 01 for UKBB
 
 ```{r}
