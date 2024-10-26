@@ -273,91 +273,104 @@ write.csv(final_summary, "summary_metrics_with_tuning_params.csv", row.names = F
 
 ```
 
+# External Validation
+
 ```{r}
 
 # Import preprocessed data 
-UKBB_subset <- read.csv("UKBB_subset.csv")
-# View(surv_df)
+ADNI_subset <- read.csv("ADNI_subset.csv")
+View(ADNI_subset)
 
+AIBL_subset <- read.csv("AIBL_subset.csv")
+View(AIBL_subset)
+
+UKBB_subset <- read.csv("UKBB_subset.csv")
+View(UKBB_subset)
+
+View(surv_df)
 # Convert the event column to a factor
 UKBB_subset$conv <- factor(UKBB_subset$conv, levels = c(0, 1), labels = c("No AD", "AD"))
 
+```
+
+```{r}
+library(tidymodels)
+library(dplyr)
+library(broom)
+
+# List of recipes
 recipes_list <- list(
   D = recipe(event ~ AGE + SEX + EDU, data = surv_df),
   Fh = recipe(event ~ FH, data = surv_df),
   DFh = recipe(event ~ AGE + SEX + EDU + FH, data = surv_df),
-  DGFh = recipe(event ~ AGE + SEX + EDU + APOE4 + FH, data = surv_df),
-  DGCFh = recipe(event ~ AGE + SEX + EDU + APOE4 + MMSE + mPACCtrailsB + FH, data = surv_df),
-  DGC = recipe(event ~ APOE4 + AGE + SEX + EDU + MMSE + mPACCtrailsB, data = surv_df)
+  DGFh = recipe(event ~ AGE + SEX + EDU + APOE4 + FH, data = surv_df)
 )
+
+# Define XGBoost hyperparameters
+xgb_spec <- boost_tree(trees = 15, tree_depth = 2, learn_rate = 0.3) %>%
+  set_engine("xgboost", objective = "binary:logistic") %>%
+  set_mode("classification")
+
+# Logistic Regression model specification
+glm_spec <- logistic_reg() %>%
+  set_engine("glm") %>%
+  set_mode("classification")
+
+# List of final models
+models_list <- list(
+  D_xgb = workflow() %>% add_recipe(recipes_list[["D"]]) %>% add_model(xgb_spec),
+  DFh_xgb = workflow() %>% add_recipe(recipes_list[["DFh"]]) %>% add_model(xgb_spec),
+  D_glm = workflow() %>% add_recipe(recipes_list[["D"]]) %>% add_model(glm_spec),
+  Fh_glm = workflow() %>% add_recipe(recipes_list[["Fh"]]) %>% add_model(glm_spec),
+  DFh_glm = workflow() %>% add_recipe(recipes_list[["DFh"]]) %>% add_model(glm_spec),
+  DGFh_glm = workflow() %>% add_recipe(recipes_list[["DGFh"]]) %>% add_model(glm_spec)
+)
+
+# Train all models on ADNI dataset
+fit_models <- lapply(models_list, function(model_wflow) {
+  model_wflow %>% fit(data = surv_df)
+})
+
+# List to store ROC AUC results
+roc_auc_results <- data.frame(
+  Model = character(),
+  Train_ROC_AUC = numeric(),
+  UKBB_ROC_AUC = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Evaluate all models on the ADNI training dataset and UKBB subset
+for (model_name in names(fit_models)) {
+  fit <- fit_models[[model_name]]
   
-# Logistic Regression with alpha and l1_ratio tuning
-final_glm_wflow <- workflow() %>%
-  add_recipe(recipes_list[["Fh"]]) %>%
-  add_model(logistic_reg() %>%
-              set_engine("glm") %>%
-              set_mode("classification"))
+  # Get predictions on ADNI dataset (training set)
+  preds_train <- predict(fit, new_data = surv_df, type = "prob") %>%
+    bind_cols(predict(fit, new_data = surv_df)) %>%
+    bind_cols(surv_df)
   
-final_glm_fit <- final_glm_wflow %>%
-  fit(data = surv_df)
+  # Store the ROC AUC metric for training set
+  roc_auc_train <- preds_train %>%
+    roc_auc(truth = event, .pred_AD)  # `event` is the target column in surv_df
+  
+  # Get predictions on UKBB dataset
+  preds_ukbb <- predict(fit, new_data = UKBB_subset, type = "prob") %>%
+    bind_cols(predict(fit, new_data = UKBB_subset)) %>%
+    bind_cols(UKBB_subset)
+  
+  # Store the ROC AUC metric for UKBB
+  roc_auc_ukbb <- preds_ukbb %>%
+    roc_auc(truth = conv, .pred_AD)
+  
+  # Save the results rounded to 3 decimal places
+  roc_auc_results <- roc_auc_results %>%
+    add_row(
+      Model = model_name,
+      Train_ROC_AUC = round(roc_auc_train$.estimate, 3),
+      UKBB_ROC_AUC = round(roc_auc_ukbb$.estimate, 3)
+    )
+}
 
-# Fit XGBoost using the best feature sets (D and DFh) and the best hyperparameters
-final_xgb_wflow_D <- workflow() %>%
-  add_recipe(recipes_list[["D"]]) %>%
-  add_model(boost_tree(trees = 15, 
-                       tree_depth = 2, 
-                       learn_rate = 0.3) %>%
-              set_engine("xgboost", objective = "binary:logistic") %>%
-              set_mode("classification"))
-
-final_xgb_wflow_DFh <- workflow() %>%
-  add_recipe(recipes_list[["DFh"]]) %>%
-  add_model(boost_tree(trees = 15, 
-                       tree_depth = 2, 
-                       learn_rate = 0.3) %>%
-              set_engine("xgboost", objective = "binary:logistic") %>%
-              set_mode("classification"))
-
-final_xgb_fit_D <- final_xgb_wflow_D %>%
-  fit(data = surv_df)
-
-final_xgb_fit_DFh <- final_xgb_wflow_DFh %>%
-  fit(data = surv_df)
-
-# Predict on the UKBB dataset using Logistic Regression
-glm_preds <- predict(final_glm_fit, new_data = UKBB_subset, type = "prob") %>%
-  bind_cols(predict(final_glm_fit, new_data = UKBB_subset)) %>%
-  bind_cols(UKBB_subset)
-
-# Predict on the UKBB dataset using XGBoost (D feature set)
-xgb_preds_D <- predict(final_xgb_fit_D, new_data = UKBB_subset, type = "prob") %>%
-  bind_cols(predict(final_xgb_fit_D, new_data = UKBB_subset)) %>%
-  bind_cols(UKBB_subset)
-
-# Predict on the UKBB dataset using XGBoost (DFh feature set)
-xgb_preds_DFh <- predict(final_xgb_fit_DFh, new_data = UKBB_subset, type = "prob") %>%
-  bind_cols(predict(final_xgb_fit_DFh, new_data = UKBB_subset)) %>%
-  bind_cols(UKBB_subset)
-
-# Evaluate Logistic Regression performance
-glm_metrics <- glm_preds %>%
-  metrics(truth = conv, estimate = .pred_class, .pred_AD) %>%
-  filter(.metric %in% c("accuracy", "roc_auc"))
-
-# Evaluate XGBoost (D) performance
-xgb_metrics_D <- xgb_preds_D %>%
-  metrics(truth = conv, estimate = .pred_class, .pred_AD) %>%
-  filter(.metric %in% c("accuracy", "roc_auc"))
-
-# Evaluate XGBoost (DFh) performance
-xgb_metrics_DFh <- xgb_preds_DFh %>%
-  metrics(truth = conv, estimate = .pred_class, .pred_AD) %>%
-  filter(.metric %in% c("accuracy", "roc_auc"))
-
-# Print results for each model
-print(glm_metrics)
-print(xgb_metrics_D)
-print(xgb_metrics_DFh)
-
+# View results
+roc_auc_results
 
 ```
