@@ -97,7 +97,7 @@ vis_miss(ADNI) + labs(title = "Heatmap of Missing Values in ADNI Dataset")
 
 # View all the rows with dataset = ABIL 
 AIBL <- data[data$dataset == "AIBL", ]
-View(AIBL)
+# View(AIBL)
 
 gg_miss_var(AIBL) + ggtitle("Missing Values in Each Column of AIBL Dataset")
 vis_miss(AIBL) + labs(title = "Heatmap of Missing Values in AIBL Dataset")
@@ -105,23 +105,25 @@ vis_miss(AIBL) + labs(title = "Heatmap of Missing Values in AIBL Dataset")
 # View all the rows with dataset = UKBiobank 
 UKBB <- data[data$dataset == "UKB", ]
 View(UKBB)
-
+sum(is.na(UKBB$EDU))
+UKBB <- UKBB[!is.na(UKBB$EDU), ]
+sum(is.na(UKBB$EDU))
 gg_miss_var(UKBB) + ggtitle("Missing Values in Each Column of UKB Dataset")
 vis_miss(UKBB) + labs(title = "Heatmap of Missing Values in UKB Dataset")
 
-# View all the rows with conv = 0 
-nonconvertors <- data[data$conv == 0, ]
-View(nonconvertors)
-
-gg_miss_var(nonconvertors) + ggtitle("Missing Values in Each Column of nonconvertors Dataset")
-vis_miss(nonconvertors) + labs(title = "Heatmap of Missing Values in nonconvertors Dataset")
-
-# View all the rows with conv = 1 
-convertors <- data[data$conv == 1, ]
-View(convertors)
-
-gg_miss_var(convertors) + ggtitle("Missing Values in Each Column of convertors Dataset")
-vis_miss(convertors) + labs(title = "Heatmap of Missing Values in convertors Dataset")
+# # View all the rows with conv = 0 
+# nonconvertors <- data[data$conv == 0, ]
+# View(nonconvertors)
+# 
+# gg_miss_var(nonconvertors) + ggtitle("Missing Values in Each Column of nonconvertors Dataset")
+# vis_miss(nonconvertors) + labs(title = "Heatmap of Missing Values in nonconvertors Dataset")
+# 
+# # View all the rows with conv = 1 
+# convertors <- data[data$conv == 1, ]
+# # View(convertors)
+# 
+# gg_miss_var(convertors) + ggtitle("Missing Values in Each Column of convertors Dataset")
+# vis_miss(convertors) + labs(title = "Heatmap of Missing Values in convertors Dataset")
 ```
 
 # Save preprocessed data to a CSV file
@@ -240,6 +242,10 @@ print(geno_covar[geno_covar$FID == 1000015, ])
 names(geno_covar)
 
 print(data[data$ID == 1000015, ])
+
+gg_miss_var(geno_covar) + ggtitle("Missing Values in Each Column of geno_covar Dataset")
+
+
 
 ```
 
