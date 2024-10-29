@@ -70,7 +70,7 @@ surv_df <- read.csv("preprocessed_data.csv")
 
 # Create survival object
 surv_df1 <- surv_df %>% 
-  mutate(diagnosis_surv = Surv(VISCODE, event == "1")) %>%
+  mutate(diagnosis_surv = Surv(VISCODE, event)) %>%
   select(diagnosis_surv, everything())
 View(surv_df1)
 
@@ -103,7 +103,7 @@ results_list <- list()
 
 # Define tuning grid for Cox model (regularization penalty)
 cox_grid <- expand.grid(
-  penalty = c(0.01, 0.1, 1, 10, 100) # Specific values for regularization penalty
+  penalty = c(0.001 ,0.01, 0.1, 1, 10, 100) # Specific values for regularization penalty
 )
 
 
@@ -134,13 +134,13 @@ for (i in seq_along(recipes_list)) {
                 set_mode("censored regression"))
 
   # Cox Proportional Hazards Model
+  predictors=current_recipe$var_info %>% filter(role=="predictor") %>% pull(variable) %>% paste(collapse="+")
   coxnet_wflow <- workflow() %>%
-     add_recipe(current_recipe) %>%
-     add_model(proportional_hazards(penalty = tune()) %>% 
+     add_formula(as.formula(str_c("Surv(VISCODE, event) ~ ", predictors))) %>%
+     add_model(proportional_hazards(penalty = tune(), mixture=1) %>% 
                  set_engine("glmnet") %>% 
                  set_mode("censored regression"))
-
-
+  
   # Random Forest Workflow
   oblique_wflow <- workflow() %>%
     add_recipe(current_recipe) %>%
@@ -168,6 +168,7 @@ for (i in seq_along(recipes_list)) {
                                eval_time = evaluation_time_points, 
                                control = control_resamples(save_pred = TRUE))
   
+
   coxnet_res <- tune_grid(coxnet_wflow, 
                           resamples = repeated_folds, 
                           grid = cox_grid, 
