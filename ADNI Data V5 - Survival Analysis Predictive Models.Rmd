@@ -41,6 +41,7 @@ library(survival)
 library(doParallel)
 
 library(pROC) #for AUC calculation
+
 # Install and load necessary packages
 # install.packages("tidymodels")
 library(tidymodels)
@@ -71,7 +72,7 @@ surv_df <- read.csv("preprocessed_data.csv")
 surv_df1 <- surv_df %>% 
   mutate(diagnosis_surv = Surv(VISCODE, event == "1")) %>%
   select(diagnosis_surv, everything())
-# View(surv_df1)
+View(surv_df1)
 
 # Define resampling scheme: repeated k-fold cross-validation
 set.seed(403)
@@ -199,6 +200,7 @@ prepare_plot_data <- function(result, model_name, recipe_name) {
     mutate(Model = model_name, recipe = recipe_name)
 }
 
+
 # Initialize an empty data frame to store all metrics
 all_metrics <- data.frame()
 
@@ -250,7 +252,7 @@ ggsave("SurvivalAllModels_0.png", plot = SurvivalAllModels_0, width = 10, height
 
 ```
 
--    Notes:
+-   Notes:
 
 -   **Brier Survival** (Top left): This metric evaluates the accuracy of survival probability predictions. Lower values indicate better model performance. In this plot, we see the Cox model (red) has more variability in some recipes, while the RandomForest and Weibull models (green, blue) show less variation and seem to perform more consistently across recipes.
 

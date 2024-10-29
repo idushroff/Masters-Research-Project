@@ -256,16 +256,21 @@ preds_ukbb <- predict(fit_models[[model_name]], new_data = UKBB_subset, type = "
 
 merged_geno_df <- preds_ukbb %>% inner_join(geno_covar %>% select(-conv, -AGE, -SEX, -FH, -APOE4), by=c('ID'='FID'))
 
-result <- computeSumStats( merged_geno_df %>% pull(-`.pred_No AD`), 
-                           merged_geno_df %>% select(-`.pred_No AD`))
+result <- computeSumStats( yp_dat=merged_geno_df %>% pull(`.pred_No AD`), 
+                           merged_geno_df %>% select(-`.pred_No AD`), 
+                           is_binary=F)
+
+result_FH <- computeSumStats( yp_dat=merged_geno_df %>% pull(FH), 
+                           merged_geno_df %>% select(-`.pred_No AD`), 
+                           is_binary=F)
+
+result_true_labels <- computeSumStats( yp_dat=merged_geno_df %>% pull(conv), 
+                           merged_geno_df %>% select(-`.pred_No AD`), 
+                          is_binary=T)
+
 print(result)
 
 
-sum(preds_ukbb$ID %in% geno_covar$FID)/length(preds_ukbb$ID)
-[1] 0.8646288
-
-sum(geno_covar$FID %in% preds_ukbb$ID)/length(geno_covar$FID)
-[1] 0.1188595
 
 ```
 
