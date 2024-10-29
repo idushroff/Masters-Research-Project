@@ -244,40 +244,28 @@ print(data[data$ID == 1000015, ])
 ```
 
 ```{r}
-computeSumStats <- function(yp, geno_covar) {
-  # Identify columns starting with 'rs'
-  rss = colnames(geno_covar)[grepl('^rs', colnames(geno_covar))]
-  
-  # Compute linear model summary statistics for each SNP
-  sumstats = pbsapply(rss, \(rs) {
-    # Subset data to include the current SNP, covariates, and remove geno_batch
-    data_subset <- geno_covar %>%
-      select(all_of(rs), -geno_batch, -one_of(setdiff(rss, rs)))
-    
-    # Combine yp and data_subset, remove rows with any NAs
-    data_for_model <- data.frame(yp = yp, data_subset) %>%
-      na.omit()
-    
-    # Fit the linear model with yp as the dependent variable
-    m <- lm(yp ~ ., data = data_for_model)
-    
-    # Extract coefficients and filter for the SNP row
-    summary(m) %>%
-      coef() %>%
-      as.data.frame() %>%
-      filter(grepl("^rs", rownames(.)))
-    
-  }, simplify = F, USE.NAMES = T) %>%
-    bind_rows() %>%
-    magrittr::set_colnames(c('Est', 'SE', 't', 'P')) %>%
-    rownames_to_column('rs')
-}
+source('regression.R')
 
 # Test the function
-result <- computeSumStats(yp, geno_covar)
+
+model_name='D_glm'
+
+preds_ukbb <- predict(fit_models[[model_name]], new_data = UKBB_subset, type = "prob") %>%
+    bind_cols(predict(fit_models[[model_name]], new_data = UKBB_subset)) %>%
+    bind_cols(UKBB_subset)
+
+merged_geno_df <- preds_ukbb %>% inner_join(geno_covar %>% select(-conv, -AGE, -SEX, -FH, -APOE4), by=c('ID'='FID'))
+
+result <- computeSumStats( merged_geno_df %>% pull(-`.pred_No AD`), 
+                           merged_geno_df %>% select(-`.pred_No AD`))
 print(result)
 
 
+sum(preds_ukbb$ID %in% geno_covar$FID)/length(preds_ukbb$ID)
+[1] 0.8646288
+
+sum(geno_covar$FID %in% preds_ukbb$ID)/length(geno_covar$FID)
+[1] 0.1188595
 
 ```
 
