@@ -55,7 +55,7 @@ library(grid)
 
 # Import preprocessed data 
 surv_df <- read.csv("preprocessed_data.csv")
-# View(surv_df)
+# #View(surv_df)
 
 # Convert the event column to a factor
 surv_df$event <- factor(surv_df$event, levels = c(0, 1), labels = c("No AD", "AD"))
@@ -257,7 +257,7 @@ summary_metrics <- all_metricsv5 %>%
 # Join the summary statistics with the best tuning parameters
 final_summary <- summary_metrics %>%
   left_join(best_params, by = "Model")
-# View the final table
+# #View the final table
 # print(final_summary)
  
 # Filter for rows where .metric == "roc_auc" and round the numeric columns to 3 decimal places
@@ -279,15 +279,15 @@ write.csv(final_summary, "summary_metrics_with_tuning_params.csv", row.names = F
 
 # Import preprocessed data 
 ADNI_subset <- read.csv("ADNI_subset.csv")
-View(ADNI_subset)
+##View(ADNI_subset)
 
 AIBL_subset <- read.csv("AIBL_subset.csv")
-View(AIBL_subset)
+#View(AIBL_subset)
 
 UKBB_subset <- read.csv("UKBB_subset.csv")
-View(UKBB_subset)
+#View(UKBB_subset)
 
-View(surv_df)
+#View(surv_df)
 # Convert the event column to a factor
 UKBB_subset$conv <- factor(UKBB_subset$conv, levels = c(0, 1), labels = c("No AD", "AD"))
 
@@ -350,7 +350,7 @@ for (model_name in names(fit_models)) {
   
   # Store the ROC AUC metric for training set
   roc_auc_train <- preds_train %>%
-    roc_auc(truth = event, .pred_AD)  # `event` is the target column in surv_df
+    roc_auc(truth = event, `.pred_No AD`)  # `event` is the target column in surv_df
   
   # Get predictions on UKBB dataset
   preds_ukbb <- predict(fit, new_data = UKBB_subset, type = "prob") %>%
@@ -359,7 +359,7 @@ for (model_name in names(fit_models)) {
   
   # Store the ROC AUC metric for UKBB
   roc_auc_ukbb <- preds_ukbb %>%
-    roc_auc(truth = conv, .pred_AD)
+    roc_auc(truth = conv, `.pred_No AD`)
   
   # Save the results rounded to 3 decimal places
   roc_auc_results <- roc_auc_results %>%
@@ -370,7 +370,7 @@ for (model_name in names(fit_models)) {
     )
 }
 
-# View results
+# #View results
 roc_auc_results
 
 ```
