@@ -224,6 +224,77 @@ print(BinaryAllModels_0)
 ggsave("Binary_All_Models_0.png", plot = BinaryAllModels_0, width = 10, height = 10)
 ```
 
+# Reorder the recipes (worst performing model should be on the left and best on the right) 
+
+```{r}
+
+# Calculate the mean value for each feature set and model
+summary_metrics <- all_metrics %>%
+  group_by(feature_set, Model, .metric) %>%
+  summarize(mean_estimate = mean(.estimate, na.rm = TRUE), .groups = "drop")
+
+# Order feature sets by average ROC AUC (or your chosen metric)
+best_feature_order <- summary_metrics %>%
+  filter(.metric == "roc_auc") %>%      # Filter to use "roc_auc" or another metric for ordering
+  arrange(mean_estimate) %>%            # Sort in ascending order for worst to best
+  distinct(feature_set) %>%             # Remove duplicate levels if any
+  pull(feature_set)
+
+# Ensure the factor levels are unique in the desired order
+all_metrics$feature_set <- factor(all_metrics$feature_set, levels = unique(best_feature_order))
+
+# Plot with ordered feature sets on x-axis
+Binaryglm_All_ordered <- ggplot(all_metrics, aes(x = feature_set, y = .estimate, fill = Model)) +
+  geom_boxplot() +
+  facet_wrap(~ .metric, scales = "free_y") +
+  labs(title = "Binary Classification - Comparison of Feature Sets Across Best Model", 
+       x = "Feature Set(s)", 
+       y = "Metric Value") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  theme_light(base_size = 13) + 
+  theme(legend.position = 'bottom')
+
+# Print the box plot
+print(Binaryglm_All_ordered)
+
+# Save the updated plot
+ggsave("Binary_All_ordered.png", plot = Binaryglm_All_ordered, width = 10, height = 10)
+```
+
+# Print & save only the AUC ROC
+
+```{r}
+# Filter for AUC-ROC metric only
+roc_auc_metrics <- all_metrics %>%
+  filter(.metric == "roc_auc")
+
+# Reorder feature sets based on the average AUC-ROC, from worst to best
+best_feature_order <- roc_auc_metrics %>%
+  group_by(feature_set) %>%
+  summarize(mean_auc = mean(.estimate, na.rm = TRUE)) %>%
+  arrange(mean_auc) %>%
+  pull(feature_set)
+
+# Ensure feature sets appear in the desired order on the x-axis
+roc_auc_metrics$feature_set <- factor(roc_auc_metrics$feature_set, levels = unique(best_feature_order))
+
+# Plot ROC AUC for each feature set, ordered on the x-axis
+Binaryglm_AUC_Only <- ggplot(roc_auc_metrics, aes(x = feature_set, y = .estimate, fill = Model)) +
+  geom_boxplot() +
+  labs(title = "Binary Classification - AUC-ROC Comparison Across Feature Sets", 
+       x = "Feature Set(s)", 
+       y = "AUC-ROC") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  theme_light(base_size = 13) + 
+  theme(legend.position = 'bottom')
+
+# Print the AUC-ROC box plot
+print(Binaryglm_AUC_Only)
+
+# Save the updated plot
+ggsave("Binaryglm_AUC_Only.png", plot = Binaryglm_AUC_Only, width = 10, height = 10)
+```
+
 # TABLE
 
 ```{r}
@@ -273,24 +344,38 @@ write.csv(final_summary, "summary_metrics_with_tuning_params.csv", row.names = F
 
 ```
 
-# External Validation
+# External Validation on UKBB
 
 ```{r}
 
 # Import preprocessed data 
 ADNI_subset <- read.csv("ADNI_subset.csv")
-View(ADNI_subset)
+# View(ADNI_subset)
 
 AIBL_subset <- read.csv("AIBL_subset.csv")
-View(AIBL_subset)
+# View(AIBL_subset)
 
 UKBB_subset <- read.csv("UKBB_subset.csv")
-View(UKBB_subset)
+# View(UKBB_subset)
 
-View(surv_df)
+# View(surv_df)
 # Convert the event column to a factor
 UKBB_subset$conv <- factor(UKBB_subset$conv, levels = c(0, 1), labels = c("No AD", "AD"))
 
+# Convert the event column to a factor
+AIBL_subset$conv <- factor(AIBL_subset$conv, levels = c(0, 1), labels = c("No AD", "AD"))
+
+
+# Import preprocessed data 
+surv_df <- read.csv("preprocessed_data.csv")
+# View(surv_df)
+
+# Convert the event column to a factor
+surv_df$event <- factor(surv_df$event, levels = c(0, 1), labels = c("No AD", "AD"))
+
+# Convert PTGENDER to numeric (0 for Male, 1 for Female)
+surv_df <- surv_df %>%
+  mutate(SEX = ifelse(SEX == "Male", 0, 1))
 ```
 
 ```{r}
@@ -319,10 +404,8 @@ glm_spec <- logistic_reg() %>%
 # List of final models
 models_list <- list(
   D_xgb = workflow() %>% add_recipe(recipes_list[["D"]]) %>% add_model(xgb_spec),
-  DFh_xgb = workflow() %>% add_recipe(recipes_list[["DFh"]]) %>% add_model(xgb_spec),
-  D_glm = workflow() %>% add_recipe(recipes_list[["D"]]) %>% add_model(glm_spec),
   Fh_glm = workflow() %>% add_recipe(recipes_list[["Fh"]]) %>% add_model(glm_spec),
-  DFh_glm = workflow() %>% add_recipe(recipes_list[["DFh"]]) %>% add_model(glm_spec),
+  DFh_xgb = workflow() %>% add_recipe(recipes_list[["DFh"]]) %>% add_model(xgb_spec),
   DGFh_glm = workflow() %>% add_recipe(recipes_list[["DGFh"]]) %>% add_model(glm_spec)
 )
 
@@ -347,10 +430,154 @@ for (model_name in names(fit_models)) {
   preds_train <- predict(fit, new_data = surv_df, type = "prob") %>%
     bind_cols(predict(fit, new_data = surv_df)) %>%
     bind_cols(surv_df)
+  preds_train
+  # Store the ROC AUC metric for training set
+  roc_auc_train <- preds_train %>%
+    roc_auc(truth = event, '.pred_No AD')  # `event` is the target column in surv_df
+  
+  # Get predictions on UKBB dataset
+  preds_ukbb <- predict(fit, new_data = UKBB_subset, type = "prob") %>%
+    bind_cols(predict(fit, new_data = UKBB_subset)) %>%
+    bind_cols(UKBB_subset)
+  preds_ukbb
+  # Store the ROC AUC metric for UKBB
+  roc_auc_ukbb <- preds_ukbb %>%
+    roc_auc(truth = conv, '.pred_No AD')
+  
+  # Save the results rounded to 3 decimal places
+  roc_auc_results <- roc_auc_results %>%
+    add_row(
+      Model = model_name,
+      Train_ROC_AUC = round(roc_auc_train$.estimate, 3),
+      UKBB_ROC_AUC = round(roc_auc_ukbb$.estimate, 3)
+    )
+}
+
+# View results
+roc_auc_results
+
+```
+
+```{r}
+
+# Initialize an empty data frame for storing AUC results
+roc_auc_results <- data.frame(
+  Model = character(),
+  Train_ROC_AUC = numeric(),
+  UKBB_ROC_AUC = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Loop through each model to fit and predict
+for (model_name in names(fit_models)) {
+  fit <- fit_models[[model_name]]
+  
+  # Get predictions on the ADNI dataset (training set)
+  preds_train <- predict(fit, new_data = surv_df, type = "prob") %>%
+    bind_cols(predict(fit, new_data = surv_df)) %>%
+    bind_cols(surv_df)
+  
+  # Calculate ROC AUC for training set
+  roc_auc_train <- preds_train %>%
+    roc_auc(truth = event, .pred_No_AD) # 'event' is the target column in surv_df
+  
+  # Generate predictions on UKBB dataset
+  preds_ukbb <- predict(fit, new_data = UKBB_subset, type = "prob") %>%
+    bind_cols(predict(fit, new_data = UKBB_subset)) %>%
+    bind_cols(UKBB_subset)
+  
+  # Calculate ROC AUC for UKBB set
+  roc_auc_ukbb <- preds_ukbb %>%
+    roc_auc(truth = conv, .pred_No_AD)
+  
+  # Add prediction columns to UKBB_subset
+  preds_ukbb <- preds_ukbb %>%
+    mutate(prediction_label = .pred_class,
+           prediction_prob_no_AD = .pred_No_AD,
+           prediction_prob_AD = .pred_AD) %>%
+    select(-.pred_No_AD, -.pred_AD, -.pred_class) # Optional: Drop intermediate prediction columns
+  
+  # Save the modified UKBB dataset with predictions
+  output_filename <- paste0("UKBB_for_RA_", model_name, ".csv")
+  write.csv(preds_ukbb, output_filename, row.names = FALSE)
+  
+  # Append ROC AUC metrics to results data frame
+  roc_auc_results <- roc_auc_results %>%
+    add_row(
+      Model = model_name,
+      Train_ROC_AUC = round(roc_auc_train$.estimate, 3),
+      UKBB_ROC_AUC = round(roc_auc_ukbb$.estimate, 3)
+    )
+}
+
+# View the ROC AUC results
+roc_auc_results
+
+```
+
+# 
+
+# External Validation on AIBL 
+
+```{r}
+
+
+library(tidymodels)
+library(dplyr)
+library(broom)
+
+# List of recipes
+recipes_list <- list(
+  D = recipe(event ~ AGE + SEX + EDU, data = surv_df),
+  Fh = recipe(event ~ FH, data = surv_df),
+  DFh = recipe(event ~ AGE + SEX + EDU + FH, data = surv_df),
+  DGFh = recipe(event ~ AGE + SEX + EDU + APOE4 + FH, data = surv_df)
+)
+
+# Define XGBoost hyperparameters
+xgb_spec <- boost_tree(trees = 15, tree_depth = 2, learn_rate = 0.3) %>%
+  set_engine("xgboost", objective = "binary:logistic") %>%
+  set_mode("classification")
+
+# Logistic Regression model specification
+glm_spec <- logistic_reg() %>%
+  set_engine("glm") %>%
+  set_mode("classification")
+
+# List of final models
+models_list <- list(
+  D_xgb = workflow() %>% add_recipe(recipes_list[["D"]]) %>% add_model(xgb_spec),
+  Fh_glm = workflow() %>% add_recipe(recipes_list[["Fh"]]) %>% add_model(glm_spec),
+  DFh_xgb = workflow() %>% add_recipe(recipes_list[["DFh"]]) %>% add_model(xgb_spec),
+  DGFh_glm = workflow() %>% add_recipe(recipes_list[["DGFh"]]) %>% add_model(glm_spec)
+)
+
+# Train all models on ADNI dataset
+fit_models <- lapply(models_list, function(model_wflow) {
+  model_wflow %>% fit(data = surv_df)
+})
+
+# List to store ROC AUC results
+roc_auc_results <- data.frame(
+  Model = character(),
+  Train_ROC_AUC = numeric(),
+  UKBB_ROC_AUC = numeric(),
+  AIBL_ROC_AUC = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Evaluate all models on the ADNI training dataset, UKBB subset, and AIBL subset
+for (model_name in names(fit_models)) {
+  fit <- fit_models[[model_name]]
+  
+  # Get predictions on ADNI dataset (training set)
+  preds_train <- predict(fit, new_data = surv_df, type = "prob") %>%
+    bind_cols(predict(fit, new_data = surv_df)) %>%
+    bind_cols(surv_df)
   
   # Store the ROC AUC metric for training set
   roc_auc_train <- preds_train %>%
-    roc_auc(truth = event, .pred_AD)  # `event` is the target column in surv_df
+    roc_auc(truth = event, '.pred_No AD')
   
   # Get predictions on UKBB dataset
   preds_ukbb <- predict(fit, new_data = UKBB_subset, type = "prob") %>%
@@ -359,14 +586,24 @@ for (model_name in names(fit_models)) {
   
   # Store the ROC AUC metric for UKBB
   roc_auc_ukbb <- preds_ukbb %>%
-    roc_auc(truth = conv, .pred_AD)
+    roc_auc(truth = conv, '.pred_No AD')
+  
+  # Get predictions on AIBL dataset
+  preds_aibl <- predict(fit, new_data = AIBL_subset, type = "prob") %>%
+    bind_cols(predict(fit, new_data = AIBL_subset)) %>%
+    bind_cols(AIBL_subset)
+  
+  # Store the ROC AUC metric for AIBL
+  roc_auc_aibl <- preds_aibl %>%
+    roc_auc(truth = conv, '.pred_No AD')
   
   # Save the results rounded to 3 decimal places
   roc_auc_results <- roc_auc_results %>%
     add_row(
       Model = model_name,
       Train_ROC_AUC = round(roc_auc_train$.estimate, 3),
-      UKBB_ROC_AUC = round(roc_auc_ukbb$.estimate, 3)
+      UKBB_ROC_AUC = round(roc_auc_ukbb$.estimate, 3),
+      AIBL_ROC_AUC = round(roc_auc_aibl$.estimate, 3)
     )
 }
 
