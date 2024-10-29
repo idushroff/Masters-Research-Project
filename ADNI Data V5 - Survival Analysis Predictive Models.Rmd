@@ -137,7 +137,7 @@ for (i in seq_along(recipes_list)) {
   predictors=current_recipe$var_info %>% filter(role=="predictor") %>% pull(variable) %>% paste(collapse="+")
   coxnet_wflow <- workflow() %>%
      add_formula(as.formula(str_c("Surv(VISCODE, event) ~ ", predictors))) %>%
-     add_model(proportional_hazards(penalty = tune(), mixture=1) %>% 
+     add_model(proportional_hazards(penalty = tune(), mixture=0) %>% 
                  set_engine("glmnet") %>% 
                  set_mode("censored regression"))
   
