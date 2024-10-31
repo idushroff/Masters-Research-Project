@@ -1,0 +1,476 @@
+---
+title: "UKBB Regression Analysis"
+author: "Uditi Shah"
+date: '2024-08-13'
+output: html_document
+---
+
+## Regression analysis
+
+## Install relevant packages:
+
+```{r}
+
+# install.packages("pbapply")
+library(pbapply)
+
+# install.packages("ggplot2")
+library(ggplot2)
+
+# install.packages("GGally")
+library(GGally)
+
+# install.packages("ggplot2")
+library(ggplot2)
+
+install.packages("gridExtra")
+library(gridExtra)
+```
+
+# Load the Datasets
+
+```{r}
+
+geno_covar <- readRDS("ukb_adni_genotypes_58_snps_v2.RDS")
+# View(geno_covar)
+
+
+print(geno_covar[geno_covar$FID == 1000015, ])
+
+# column/variable names
+names(geno_covar)
+
+print(data[data$ID == 1000015, ])
+
+```
+
+# 1 Binary Classification - Demographics - XGBoost Model Predictions
+
+```{r}
+
+source('regression.R')
+
+# Test the function
+
+model_name='D_xgb'
+
+preds_ukbb <- predict(fit_models[[model_name]], new_data = UKBB_subset, type = "prob") %>%
+    bind_cols(predict(fit_models[[model_name]], new_data = UKBB_subset)) %>%
+    bind_cols(UKBB_subset)
+
+merged_geno_df <- preds_ukbb %>% inner_join(geno_covar %>% select(-conv, -AGE, -SEX, -FH, -APOE4), by=c('ID'='FID'))
+
+result_D_xgb <- computeSumStats( yp_dat=merged_geno_df %>% pull(`.pred_No AD`), 
+                           merged_geno_df %>% select(-`.pred_No AD`), 
+                           is_binary=F)
+
+# result_FH <- computeSumStats( yp_dat=merged_geno_df %>% pull(FH), 
+#                            merged_geno_df %>% select(-`.pred_No AD`), 
+#                            is_binary=F)
+
+result_true_labels <- computeSumStats( yp_dat=merged_geno_df %>% pull(conv), 
+                           merged_geno_df %>% select(-`.pred_No AD`), 
+                          is_binary=T)
+
+print(result_D_xgb)
+
+
+###################################################################################
+# D_xgb_plot_v1 <- plot(-log10(result_true_labels$P), -log10(result$P))
+# print(D_xgb_plot_v1)
+
+# Create a data frame from your results
+D_xgb_df <- data.frame(
+  snp_effect_size = -log10(result_true_labels$P),
+  D_xgb = -log10(result_D_xgb$P)
+)
+
+# Calculate the correlation
+correlation_value <- cor(D_xgb_df$snp_effect_size, D_xgb_df$D_xgb)
+
+# Print the correlation value
+# print(paste("Correlation: ", round(correlation_value, 3)))
+
+# Create the plot with an identity line and correlation annotation
+D_xgb_plot_v2 <- ggplot(D_xgb_df, aes(x = snp_effect_size, y = D_xgb)) +
+  geom_point(color = 'blue', size = 2) + # Add points
+  labs(
+    title = "Regression Analysis Results",
+    x = "SNP Effect Size (Coefficient of Regression Actual Labels)",
+    y = "Demographics Predictions XGB Model)"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14)
+  ) +
+  annotate("text", x = max(D_xgb_df$snp_effect_size) * 0.7, 
+           y = max(D_xgb_df$D_xgb) * 0.9, 
+           label = paste("Correlation: ", round(correlation_value, 3)), 
+           color = "black", size = 5)
+
+# Display the plot
+print(D_xgb_plot_v2)
+
+
+###################################################################################
+# Identify indices where P-values are above the threshold, then plot without them
+I <- which(result_true_labels$P < 0.0000001)
+
+# D_xgb_plot2_v1 <- plot(-log10(result_true_labels$P[-I]), -log10(result$P[-I]))
+# print(D_xgb_plot2_v1)
+
+# Create a data frame for plotting with filtered values
+D_xgb_df2 <- data.frame(
+  snp_effect_size_filtered = -log10(result_true_labels$P[-I]),
+  D_xgb_filtered = -log10(result_D_xgb$P[-I])
+)
+
+# Calculate the correlation
+correlation_value <- cor(D_xgb_df2$snp_effect_size_filtered, D_xgb_df2$D_xgb_filtered)
+
+
+# Create the plot with appropriate labels and styles
+D_xgb_plot2_v2 <- ggplot(D_xgb_df2, aes(x = snp_effect_size_filtered, y = D_xgb_filtered)) +
+  geom_point(color = 'red', size = 2) + # Add points
+  labs(
+    title = "Filtered Regression Analysis Results",
+    x = "SNP Effect Size (Filtered)",
+    y = "D_xgb Predictions (Filtered)"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14)
+  ) +
+  annotate("text", x = max(D_xgb_df2$snp_effect_size_filtered) * 0.7, 
+           y = max(D_xgb_df2$D_xgb_filtered) * 0.9, 
+           label = paste("Correlation: ", round(correlation_value, 3)), 
+           color = "black", size = 5)
+# Display the plot
+print(D_xgb_plot2_v2)
+```
+
+# 2 Binary Classification - Family History - Logistic Regression Model
+
+```{r}
+
+source('regression.R')
+
+# Test the function
+
+model_name='Fh_glm'
+
+preds_ukbb <- predict(fit_models[[model_name]], new_data = UKBB_subset, type = "prob") %>%
+    bind_cols(predict(fit_models[[model_name]], new_data = UKBB_subset)) %>%
+    bind_cols(UKBB_subset)
+
+merged_geno_df <- preds_ukbb %>% inner_join(geno_covar %>% select(-conv, -AGE, -SEX, -FH, -APOE4), by=c('ID'='FID'))
+
+result_Fh_glm <- computeSumStats( yp_dat=merged_geno_df %>% pull(`.pred_No AD`), 
+                           merged_geno_df %>% select(-`.pred_No AD`), 
+                           is_binary=F)
+
+# result_FH <- computeSumStats( yp_dat=merged_geno_df %>% pull(FH), 
+#                            merged_geno_df %>% select(-`.pred_No AD`), 
+#                            is_binary=F)
+
+result_true_labels <- computeSumStats( yp_dat=merged_geno_df %>% pull(conv), 
+                           merged_geno_df %>% select(-`.pred_No AD`), 
+                          is_binary=T)
+
+print(result_Fh_glm)
+
+
+###################################################################################
+# Fh_glm_plot_v1 <- plot(-log10(result_true_labels$P), -log10(result$P))
+# print(Fh_glm_plot_v1)
+
+# Create a data frame from your results
+Fh_glm_df <- data.frame(
+  snp_effect_size = -log10(result_true_labels$P),
+  Fh_glm = -log10(result_Fh_glm$P)
+)
+
+# Calculate the correlation
+correlation_value <- cor(Fh_glm_df$snp_effect_size, Fh_glm_df$Fh_glm)
+
+# Print the correlation value
+# print(paste("Correlation: ", round(correlation_value, 3)))
+
+# Create the plot with an identity line and correlation annotation
+Fh_glm_plot_v2 <- ggplot(Fh_glm_df, aes(x = snp_effect_size, y = Fh_glm)) +
+  geom_point(color = 'blue', size = 2) + # Add points
+  labs(
+    title = "Regression Analysis Results",
+    x = "SNP Effect Size (Coefficient of Regression Actual Labels)",
+    y = "Demographics Predictions GLM Model"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14)
+  ) +
+  annotate("text", x = max(Fh_glm_df$snp_effect_size) * 0.7, 
+           y = max(Fh_glm_df$Fh_glm) * 0.9, 
+           label = paste("Correlation: ", round(correlation_value, 3)), 
+           color = "black", size = 5)
+
+# Display the plot
+print(Fh_glm_plot_v2)
+
+
+###################################################################################
+# Identify indices where P-values are above the threshold, then plot without them
+I <- which(result_true_labels$P < 0.0000001)
+
+# Fh_glm_plot2_v1 <- plot(-log10(result_true_labels$P[-I]), -log10(result$P[-I]))
+# print(Fh_glm_plot2_v1)
+
+# Create a data frame for plotting with filtered values
+Fh_glm_df2 <- data.frame(
+  snp_effect_size_filtered = -log10(result_true_labels$P[-I]),
+  Fh_glm_filtered = -log10(result_Fh_glm$P[-I])
+)
+
+# Calculate the correlation
+correlation_value <- cor(Fh_glm_df2$snp_effect_size_filtered, Fh_glm_df2$Fh_glm_filtered)
+
+
+# Create the plot with appropriate labels and styles
+Fh_glm_plot2_v2 <- ggplot(Fh_glm_df2, aes(x = snp_effect_size_filtered, y = Fh_glm_filtered)) +
+  geom_point(color = 'red', size = 2) + # Add points
+  labs(
+    title = "Filtered Regression Analysis Results",
+    x = "SNP Effect Size (Filtered)",
+    y = "Fh_glm Predictions (Filtered)"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14)
+  ) +
+  annotate("text", x = max(Fh_glm_df2$snp_effect_size_filtered) * 0.7, 
+           y = max(Fh_glm_df2$Fh_glm_filtered) * 0.9, 
+           label = paste("Correlation: ", round(correlation_value, 3)), 
+           color = "black", size = 5)
+# Display the plot
+print(Fh_glm_plot2_v2)
+
+
+```
+
+# 3 Binary Classification - Demographics + Family History - XGBoost Model
+
+```{r}
+
+source('regression.R')
+
+# Test the function
+
+model_name='DFh_xgb'
+
+preds_ukbb <- predict(fit_models[[model_name]], new_data = UKBB_subset, type = "prob") %>%
+    bind_cols(predict(fit_models[[model_name]], new_data = UKBB_subset)) %>%
+    bind_cols(UKBB_subset)
+
+merged_geno_df <- preds_ukbb %>% inner_join(geno_covar %>% select(-conv, -AGE, -SEX, -FH, -APOE4), by=c('ID'='FID'))
+
+result_DFh_xgb <- computeSumStats( yp_dat=merged_geno_df %>% pull(`.pred_No AD`), 
+                           merged_geno_df %>% select(-`.pred_No AD`), 
+                           is_binary=F)
+
+result_true_labels <- computeSumStats( yp_dat=merged_geno_df %>% pull(conv), 
+                           merged_geno_df %>% select(-`.pred_No AD`), 
+                          is_binary=T)
+
+print(result_DFh_xgb)
+
+
+###################################################################################
+DFh_xgb_df <- data.frame(
+  snp_effect_size = -log10(result_true_labels$P),
+  DFh_xgb = -log10(result_DFh_xgb$P)
+)
+
+# Calculate the correlation
+correlation_value <- cor(DFh_xgb_df$snp_effect_size, DFh_xgb_df$DFh_xgb)
+
+# Create the plot with an identity line and correlation annotation
+DFh_xgb_plot_v2 <- ggplot(DFh_xgb_df, aes(x = snp_effect_size, y = DFh_xgb)) +
+  geom_point(color = 'blue', size = 2) + # Add points
+  labs(
+    title = "Regression Analysis Results",
+    x = "SNP Effect Size (Coefficient of Regression Actual Labels)",
+    y = "Demographics Predictions XGB Model"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14)
+  ) +
+  annotate("text", x = max(DFh_xgb_df$snp_effect_size) * 0.7, 
+           y = max(DFh_xgb_df$DFh_xgb) * 0.9, 
+           label = paste("Correlation: ", round(correlation_value, 3)), 
+           color = "black", size = 5)
+
+# Display the plot
+print(DFh_xgb_plot_v2)
+
+
+###################################################################################
+I <- which(result_true_labels$P < 0.0000001)
+
+DFh_xgb_df2 <- data.frame(
+  snp_effect_size_filtered = -log10(result_true_labels$P[-I]),
+  DFh_xgb_filtered = -log10(result_DFh_xgb$P[-I])
+)
+
+# Calculate the correlation
+correlation_value <- cor(DFh_xgb_df2$snp_effect_size_filtered, DFh_xgb_df2$DFh_xgb_filtered)
+
+DFh_xgb_plot2_v2 <- ggplot(DFh_xgb_df2, aes(x = snp_effect_size_filtered, y = DFh_xgb_filtered)) +
+  geom_point(color = 'red', size = 2) + # Add points
+  labs(
+    title = "Filtered Regression Analysis Results",
+    x = "SNP Effect Size (Filtered)",
+    y = "DFh_xgb Predictions (Filtered)"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14)
+  ) +
+  annotate("text", x = max(DFh_xgb_df2$snp_effect_size_filtered) * 0.7, 
+           y = max(DFh_xgb_df2$DFh_xgb_filtered) * 0.9, 
+           label = paste("Correlation: ", round(correlation_value, 3)), 
+           color = "black", size = 5)
+# Display the plot
+print(DFh_xgb_plot2_v2)
+
+```
+
+# 4 Binary Classification - DGFh - Logistic Regression Model
+
+```{r}
+
+source('regression.R')
+
+# Test the function
+
+model_name='DGFh_glm'
+
+preds_ukbb <- predict(fit_models[[model_name]], new_data = UKBB_subset, type = "prob") %>%
+    bind_cols(predict(fit_models[[model_name]], new_data = UKBB_subset)) %>%
+    bind_cols(UKBB_subset)
+
+merged_geno_df <- preds_ukbb %>% inner_join(geno_covar %>% select(-conv, -AGE, -SEX, -FH, -APOE4), by=c('ID'='FID'))
+
+result_DGFh_glm <- computeSumStats( yp_dat=merged_geno_df %>% pull(`.pred_No AD`), 
+                           merged_geno_df %>% select(-`.pred_No AD`), 
+                           is_binary=F)
+
+result_true_labels <- computeSumStats( yp_dat=merged_geno_df %>% pull(conv), 
+                           merged_geno_df %>% select(-`.pred_No AD`), 
+                          is_binary=T)
+
+print(result_DGFh_glm)
+
+
+###################################################################################
+DGFh_glm_df <- data.frame(
+  snp_effect_size = -log10(result_true_labels$P),
+  DGFh_glm = -log10(result_DGFh_glm$P)
+)
+
+# Calculate the correlation
+correlation_value <- cor(DGFh_glm_df$snp_effect_size, DGFh_glm_df$DGFh_glm)
+
+# Create the plot with an identity line and correlation annotation
+DGFh_glm_plot_v2 <- ggplot(DGFh_glm_df, aes(x = snp_effect_size, y = DGFh_glm)) +
+  geom_point(color = 'blue', size = 2) + # Add points
+  labs(
+    title = "Regression Analysis Results",
+    x = "SNP Effect Size (Coefficient of Regression Actual Labels)",
+    y = "Demographics Predictions GLM Model"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14)
+  ) +
+  annotate("text", x = max(DGFh_glm_df$snp_effect_size) * 0.7, 
+           y = max(DGFh_glm_df$DGFh_glm) * 0.9, 
+           label = paste("Correlation: ", round(correlation_value, 3)), 
+           color = "black", size = 5)
+
+# Display the plot
+print(DGFh_glm_plot_v2)
+
+# I'm getting the Nan for the Cor in this plot because there are some P=0 values  causing inf when u take -log and that's why. so get rid of that and use the plot below
+any(is.na(result_true_labels$P)) || any(is.na(result_DGFh_glm$P))
+# [1] FALSE
+any(is.infinite(-log10(result_true_labels$P))) || any(is.infinite(-log10(result_DGFh_glm$P)))
+# [1] TRUE
+
+###################################################################################
+I <- which(result_true_labels$P < 0.0000001)
+
+DGFh_glm_df2 <- data.frame(
+  snp_effect_size_filtered = -log10(result_true_labels$P[-I]),
+  DGFh_glm_filtered = -log10(result_DGFh_glm$P[-I])
+)
+
+# Calculate the correlation
+correlation_value <- cor(DGFh_glm_df2$snp_effect_size_filtered, DGFh_glm_df2$DGFh_glm_filtered)
+
+DGFh_glm_plot2_v2 <- ggplot(DGFh_glm_df2, aes(x = snp_effect_size_filtered, y = DGFh_glm_filtered)) +
+  geom_point(color = 'red', size = 2) + # Add points
+  labs(
+    title = "Filtered Regression Analysis Results",
+    x = "SNP Effect Size (Filtered)",
+    y = "DGFh_glm Predictions (Filtered)"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14)
+  ) +
+  annotate("text", x = max(DGFh_glm_df2$snp_effect_size_filtered) * 0.7, 
+           y = max(DGFh_glm_df2$DGFh_glm_filtered) * 0.9, 
+           label = paste("Correlation: ", round(correlation_value, 3)), 
+           color = "black", size = 5)
+
+# Display the plot
+print(DGFh_glm_plot2_v2)
+
+
+##############################################################
+
+```
+
+# Plot all the plots side by Side
+
+```{r}
+
+RA_BC_plot1 <- grid.arrange(D_xgb_plot_v2, Fh_glm_plot_v2, DFh_xgb_plot_v2, DGFh_glm_plot_v2, ncol = 2, nrow = 2)
+
+# Save the updated plot
+ggsave("RA_BC_plot1.png", plot = RA_BC_plot1, width = 10, height = 10)
+```
+
+```{r}
+
+RA_BC_plot2 <- grid.arrange(D_xgb_plot2_v2, Fh_glm_plot2_v2, DFh_xgb_plot2_v2, DGFh_glm_plot2_v2, ncol = 2, nrow = 2)
+
+# Save the updated plot
+ggsave("RA_BC_plot2.png", plot = RA_BC_plot2, width = 10, height = 10)
+```

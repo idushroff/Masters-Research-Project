@@ -111,7 +111,7 @@ rf_grid <- grid_values(
 )
 ```
 
-Define all the Recipes
+# Define all the Recipes
 
 ```{r}
 

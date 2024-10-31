@@ -60,7 +60,7 @@ registerDoParallel()
 # library(randomForestSRC)
 ```
 
-Import dataset, Pre-process & set up cross validation
+# Import data set, Pre-process & set up cross validation
 
 ```{r}
 
@@ -72,7 +72,11 @@ surv_df <- read.csv("preprocessed_data.csv")
 surv_df1 <- surv_df %>% 
   mutate(diagnosis_surv = Surv(VISCODE, event)) %>%
   select(diagnosis_surv, everything())
-View(surv_df1)
+# View(surv_df1)
+
+# Convert PTGENDER to numeric (0 for Male, 1 for Female)
+surv_df1 <- surv_df %>%
+  mutate(SEX = ifelse(SEX == "Male", 0, 1))
 
 # Define resampling scheme: repeated k-fold cross-validation
 set.seed(403)
@@ -90,12 +94,12 @@ repeated_folds <- vfold_cv(surv_df1, v = 5, repeats = 3) # 5-fold cross-validati
 # DGC = Demographics + Genetics + Cognition
 
 recipes_list <- list(
-  D = recipe(diagnosis_surv ~ AGE + SEX + EDU, data = surv_df1)
-  # Fh = recipe(diagnosis_surv ~ FH, data = surv_df1),
-  # DFh = recipe(diagnosis_surv ~ AGE + SEX + EDU + FH, data = surv_df1),
-  # DGFh = recipe(diagnosis_surv ~ AGE + SEX + EDU + APOE4 + FH, data = surv_df1),
-  # DGCFh = recipe(diagnosis_surv ~ AGE + SEX + EDU + APOE4 + MMSE + mPACCtrailsB + FH, data = surv_df1),
-  # DGC = recipe(diagnosis_surv ~ APOE4 + AGE + SEX + EDU + MMSE + mPACCtrailsB, data = surv_df1)
+  D = recipe(diagnosis_surv ~ AGE + SEX + EDU, data = surv_df1),
+  Fh = recipe(diagnosis_surv ~ FH, data = surv_df1),
+  DFh = recipe(diagnosis_surv ~ AGE + SEX + EDU + FH, data = surv_df1),
+  DGFh = recipe(diagnosis_surv ~ AGE + SEX + EDU + APOE4 + FH, data = surv_df1),
+  DGCFh = recipe(diagnosis_surv ~ AGE + SEX + EDU + APOE4 + MMSE + mPACCtrailsB + FH, data = surv_df1),
+  DGC = recipe(diagnosis_surv ~ APOE4 + AGE + SEX + EDU + MMSE + mPACCtrailsB, data = surv_df1)
 )
 
 # Initialize list to store results for each recipe and model
@@ -116,7 +120,7 @@ rf_grid <- expand.grid(
 
 ```
 
-Define all the Recipes
+# TRAIN
 
 ```{r}
 
@@ -137,7 +141,7 @@ for (i in seq_along(recipes_list)) {
   predictors=current_recipe$var_info %>% filter(role=="predictor") %>% pull(variable) %>% paste(collapse="+")
   coxnet_wflow <- workflow() %>%
      add_formula(as.formula(str_c("Surv(VISCODE, event) ~ ", predictors))) %>%
-     add_model(proportional_hazards(penalty = tune(), mixture=1) %>% 
+     add_model(proportional_hazards(penalty = tune(), mixture=0) %>% 
                  set_engine("glmnet") %>% 
                  set_mode("censored regression"))
   
@@ -191,31 +195,40 @@ for (i in seq_along(recipes_list)) {
 
 ```
 
-```{r}
+# PLOT
 
+```{r}
 
 # Access results using results_list[['Recipe_1_Weibull']], etc.
 # Function to extract and prepare metrics for plotting
-prepare_plot_data <- function(result, model_name, recipe_name) {
+prepare_survival_data <- function(result, model_name, feature_set_name) {
   collect_metrics(result, summarize = FALSE) %>%
-    mutate(Model = model_name, recipe = recipe_name)
+    mutate(Model = model_name,  feature_set = feature_set_name)
 }
 
 
 # Initialize an empty data frame to store all metrics
 all_metrics <- data.frame()
+View(all_metrics)
+
+# Save the final table with median, quartiles, and tuning parameters as a CSV
+# write.csv(all_metrics, "survivalmodelresults.csv", row.names = FALSE)
 
 # Loop through results and extract metrics for each model and recipe
 for (name in names(results_list)) {
   model_name <- str_extract(name, "Weibull|Cox|RandomForest")
   recipe_name <- str_extract(name, "(?<=Feature_Set_)[^_]+")  
-  metrics_data <- prepare_plot_data(results_list[[name]], model_name, recipe_name)
+  metrics_data <- prepare_survival_data(results_list[[name]], model_name, recipe_name)
   all_metrics <- bind_rows(all_metrics, metrics_data)
 }
 
+# Summarize metrics for plotting
+summary_survival_metrics <- all_metrics %>%
+  group_by(feature_set, Model, .metric)
+summary_survival_metrics
 
 # Plot Brier score and ROC AUC for all models and recipes
-SurvivalAllModels_0 <- ggplot(all_metrics, aes(x = recipe, y = .estimate, fill = Model)) +
+SurvivalAllModels_0 <- ggplot(summary_survival_metrics, aes(x = feature_set, y = .estimate, fill = Model)) +
   geom_boxplot() +
   facet_wrap(~.metric, scales = "free_y") +
   labs(title = "Survival Analysis - Demographics Across All Models", x = "Feature Set(s)", y = "Metric Value") +
@@ -227,33 +240,304 @@ SurvivalAllModels_0 <- ggplot(all_metrics, aes(x = recipe, y = .estimate, fill =
 print(SurvivalAllModels_0)
 
 
-# Custom legend (optional)
-# recipe_legend1 <- textGrob("Feature set: \n1. Demographics (D) = Age, Gender, Education \n2. Family History (Fh) = Mother or Father had Alzheimer's \n3. Genetics (G) = APOE4 \n4. Cognitive Tests (C) = MMSE, mPACCtrailsB \n", 
-                           # gp = gpar(fontsize = 10), 
-                           # hjust = 0)
-
-# Combine the box plot and the legend
-# SurvivalAllModels_1 <- grid.arrange(SurvivalAllModels_0, recipe_legend1, ncol = 1, heights = c(3, 1))
-# print(SurvivalAllModels_1)
-
-# Custom legend (optional)
-# recipe_legend2 <- textGrob("Feature set: \n1. Demographics (D) \n2. Family History (DFh) \n3. Demographics + Family History (DFh) \n4. Demographics + Genetics + Family History (DGFh) \n5. Demographics + Genetics + Cognition + Family History (DGCFh) \n6. Demographics + Genetics + Cognition (DGC) \n",
-                           # gp = gpar(fontsize = 10),
-                           # hjust = 0)
-
-# Combine the box plot and the legend
-# SurvivalAllModels_2 <- grid.arrange(SurvivalAllModels_0, recipe_legend2, ncol = 1, heights = c(3, 1))
-# print(SurvivalAllModels_2)
-
 # Save the updated plot
 ggsave("SurvivalAllModels_0.png", plot = SurvivalAllModels_0, width = 10, height = 10)
-# ggsave("SurvivalAllModels_1.png", plot = SurvivalAllModels_1, width = 10, height = 10)
-# ggsave("SurvivalAllModels_2.png", plot = SurvivalAllModels_2, width = 10, height = 10)
+```
 
+# Ordered plotting (worst performing model should be on the left and best on the right)
+
+```{r}
+
+
+# Step 1: Calculate mean performance for ordering
+model_order <- all_metrics %>%
+  group_by(feature_set, Model, .metric) %>%
+  summarize(mean_estimate = mean(.estimate, na.rm = TRUE), .groups = "drop")
+
+View(model_order)
+# Order feature sets by average ROC AUC (or your chosen metric)
+best_feature_order <- model_order %>%
+  filter(.metric == "roc_auc_survival") %>%      # Filter to use "roc_auc" or another metric for ordering
+  arrange(mean_estimate) %>%            # Sort in ascending order for worst to best
+  distinct(feature_set) %>%             # Remove duplicate levels if any
+  pull(feature_set)
+
+best_feature_order
+# Ensure the factor levels are unique in the desired order
+all_metrics$feature_set <- factor(all_metrics$feature_set, levels = unique(best_feature_order))
+
+
+# Plot Brier score and ROC AUC for all models and recipes
+SurvivalAllModels_ordered <- ggplot(all_metrics, aes(x = feature_set, 
+                                                     y = .estimate, 
+                                                     fill = Model)) +
+  geom_boxplot() +
+  facet_wrap(~.metric, scales = "free_y") +
+  labs(title = "Survival Analysis - Demographics Across All Models", 
+       x = "Feature Set(s)", 
+       y = "Metric Value") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  theme_light(base_size = 13) + 
+  theme(legend.position = 'bottom')
+
+# Print the ordered box plot
+print(SurvivalAllModels_ordered)
+
+# Save the ordered plot
+ggsave("SurvivalAllModels_ordered.png", plot = SurvivalAllModels_ordered, width = 10, height = 10)
+```
+
+# Print & save only the AUC ROC
+
+```{r}
+
+# Filter the data to include only the ROC AUC metric
+all_metrics_auc <- all_metrics %>%
+  filter(.metric == "roc_auc_survival")
+
+# Plot only ROC AUC for all models and recipes
+SurvivalAUC_Only <- ggplot(all_metrics_auc, aes(x = feature_set, y = .estimate, fill = Model)) +
+  geom_boxplot() +
+  labs(title = "ROC AUC Across All Models and Feature Sets", x = "Feature Set(s)", y = "AUC Value") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  theme_light(base_size = 13) + 
+  theme(legend.position = 'bottom')
+
+# Print the AUC ROC plot
+print(SurvivalAUC_Only)
+
+# Save the AUC ROC plot
+ggsave("SurvivalAUC_Only.png", plot = SurvivalAUC_Only, width = 10, height = 10)
 
 ```
 
--   Notes:
+# TABLE
+
+```{r}
+
+# Function to extract the best parameters for survival models
+# For Cox PH  (coxnet_res)
+cox_best_params <- coxnet_res %>%
+  select_best(metric = "roc_auc_survival") %>%
+  mutate(Model = "Cox")
+
+# For RF_survival (oblique_res)
+oblique_best_params <- oblique_res %>%
+  select_best(metric = "roc_auc_survival") %>%
+  mutate(Model = "RandomForest")
+
+
+# Combine all the best tuning parameters
+best_params <- bind_rows(cox_best_params, oblique_best_params)
+
+# Calculate summary statistics for ROC AUC values
+summary_metrics1 <- all_metrics %>%
+  group_by(feature_set, Model, .metric) %>%
+  summarize(
+    Median = median(.estimate, na.rm = TRUE),
+    Q1 = quantile(.estimate, 0.25, na.rm = TRUE),
+    Q3 = quantile(.estimate, 0.75, na.rm = TRUE),
+  )
+
+# Join the summary statistics with the best tuning parameters
+final_summary1 <- summary_metrics1 %>%
+  left_join(best_params, by = "Model")
+
+# Filter for rows where .metric == "roc_auc" and round numeric columns
+roc_auc_surv_summary <- final_summary1 %>%
+  filter(.metric == "roc_auc_survival") %>%
+  mutate(across(c(Median, Q1, Q3), round, 3))  # Round Median, Q1, Q3 to 3 decimal places
+
+# Print the filtered summary table
+print(roc_auc_surv_summary)
+
+# Save the final table with median, quartiles, and tuning parameters as a CSV
+# write.csv(roc_auc_summary, "roc_auc_summary_with_tuning_params.csv", row.names = FALSE)
+
+```
+
+# External Validation on UKBB & AIBL
+
+```{r}
+
+# Import preprocessed data 
+ADNI_subset <- read.csv("ADNI_subset.csv")
+
+# View(ADNI_subset)
+
+AIBL_subset <- read.csv("AIBL_subset.csv")
+# View(AIBL_subset)
+
+UKBB_subset <- read.csv("UKBB_subset.csv")
+# View(UKBB_subset)
+
+# View(surv_df)
+# Convert the event column to a factor
+UKBB_subset$conv <- factor(UKBB_subset$conv, levels = c(0, 1), labels = c("No AD", "AD"))
+
+# Convert the event column to a factor
+AIBL_subset$conv <- factor(AIBL_subset$conv, levels = c(0, 1), labels = c("No AD", "AD"))
+
+# Import preprocessed data 
+surv_df <- read.csv("preprocessed_data.csv") 
+# View(surv_df)
+# Convert PTGENDER to numeric (0 for Male, 1 for Female)
+surv_df$SEX <- ifelse(surv_df$SEX == "Male", 0, ifelse(surv_df$SEX == "Female", 1, NA))
+
+# Check if any NAs were introduced (for troubleshooting)
+sum(is.na(surv_df$SEX))
+# Create survival object
+surv_df1 <- surv_df %>% 
+  mutate(diagnosis_surv = Surv(VISCODE, event)) %>%
+  select(diagnosis_surv, everything())
+
+# View(surv_df1)
+
+# Convert SEX column to numeric in all datasets to prevent coercion issues
+ADNI_subset$SEX <- as.numeric(ADNI_subset$SEX)
+AIBL_subset$SEX <- as.numeric(AIBL_subset$SEX)
+UKBB_subset$SEX <- as.numeric(UKBB_subset$SEX)
+```
+
+```{r}
+
+library(tidymodels)
+library(dplyr)
+library(broom)
+
+# Define recipes for models
+recipes_list <- list(
+  D = recipe(diagnosis_surv ~ AGE + SEX + EDU, data = surv_df1),
+  Fh = recipe(diagnosis_surv ~ FH, data = surv_df1),
+  DFh = recipe(diagnosis_surv ~ AGE + SEX + EDU + FH, data = surv_df1),
+  DGFh = recipe(diagnosis_surv ~ AGE + SEX + EDU + APOE4 + FH, data = surv_df1)
+)
+
+# Define Weibull and Random Survival Forest models
+weibull_spec <- survival_reg() %>% 
+  set_engine("survival") %>% 
+  set_mode("censored regression")
+
+oblique_spec <- rand_forest(trees = 1000, mtry = 2, min_n = 1) %>% 
+  set_engine("aorsf") %>% 
+  set_mode("censored regression")
+
+# Define time points for AUC evaluation
+evaluation_time_points <- seq(0, 144, 6)
+# evaluation_time_points <- 75
+
+# List workflows for each model
+models_list <- list(
+  D_RSF = workflow() %>% 
+    add_recipe(recipes_list[["D"]]) %>% 
+    add_model(oblique_spec),
+  
+  Fh_RSF = workflow() %>% 
+    add_recipe(recipes_list[["Fh"]]) %>% 
+    add_model(oblique_spec),
+  
+  DFh_RSF = workflow() %>% 
+    add_recipe(recipes_list[["DFh"]]) %>% 
+    add_model(oblique_spec),
+  
+  DGFh_WR = workflow() %>% 
+    add_recipe(recipes_list[["DGFh"]]) %>% 
+    add_model(weibull_spec)
+)
+
+# Train models on ADNI dataset
+fit_models <- lapply(models_list, function(model_wflow) {
+  model_wflow %>% fit(data = surv_df1)
+})
+
+# Data frame to store ROC AUC results
+roc_auc_results <- data.frame(
+  Model = character(),
+  Train_ROC_AUC = numeric(),
+  UKBB_ROC_AUC = numeric(),
+  AIBL_ROC_AUC = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Cross-validation resampling setup
+set.seed(1)
+repeated_folds <- vfold_cv(surv_df1, v = 5, repeats = 3)
+survival_metrics <- metric_set(roc_auc_survival)
+
+# Train and evaluate models on multiple datasets
+for (model_name in names(fit_models)) {
+  fit <- fit_models[[model_name]]
+  
+  # Get predictions and calculate ROC AUC for ADNI (Training Set)
+  preds_train <- predict(fit, 
+                         new_data = surv_df1, 
+                         type = "survival", 
+                         eval_time = evaluation_time_points)
+  
+  # Get predictions and calculate ROC AUC for UKBB
+  preds_ukbb <- predict(fit, 
+                        new_data = UKBB_subset, 
+                        type = "survival", 
+                        eval_time = evaluation_time_points)
+  print(head(preds_ukbb)) 
+  roc_auc_ukbb <- survival_metrics(preds_ukbb, 
+                                   truth = UKBB_subset$conv, 
+                                   .eval_time = evaluation_time_points)
+  
+  # Get predictions and calculate ROC AUC for AIBL
+  preds_aibl <- predict(fit, 
+                        new_data = AIBL_subset, 
+                        type = "survival", 
+                        eval_time = evaluation_time_points)
+  
+  roc_auc_aibl <- survival_metrics(preds_aibl, 
+                                   truth = AIBL_subset$conv, 
+                                   .eval_time = evaluation_time_points)
+
+  # Store the results
+  roc_auc_results <- roc_auc_results %>%
+    add_row(
+      Model = model_name,
+      Train_ROC_AUC = round(mean(roc_auc_train$.estimate), 3),
+      UKBB_ROC_AUC = round(mean(roc_auc_ukbb$.estimate), 3),
+      AIBL_ROC_AUC = round(mean(roc_auc_aibl$.estimate), 3)
+    )
+}
+
+# View results
+print(roc_auc_results)
+
+```
+
+```{r}
+
+library(tidymodels)
+library(dplyr)
+library(broom)
+
+# Copy the original datasets to add predictions to
+updated_UKBB_subset_SA <- UKBB_subset
+updated_AIBL_subset_SA <- AIBL_subset
+
+# Loop over each model and get predictions
+for (model_name in names(fit_models)) {
+  fit <- fit_models[[model_name]]
+  
+  # Generate predictions (class labels) for each subset and rename columns
+  preds_ukbb_SA <- predict(fit, new_data = UKBB_subset) %>% pull(.pred_class)
+  preds_aibl_SA <- predict(fit, new_data = AIBL_subset) %>% pull(.pred_class)
+  
+  # Add predictions as new columns in each updated dataset
+  updated_UKBB_subset_SA[[model_name]] <- preds_ukbb_SA
+  updated_AIBL_subset_SA[[model_name]] <- preds_aibl_SA
+}
+
+# View updated datasets with predictions
+View(updated_UKBB_subset_SA)
+View(updated_AIBL_subset_SA)
+
+
+```
 
 -   **Brier Survival** (Top left): This metric evaluates the accuracy of survival probability predictions. Lower values indicate better model performance. In this plot, we see the Cox model (red) has more variability in some recipes, while the RandomForest and Weibull models (green, blue) show less variation and seem to perform more consistently across recipes.
 

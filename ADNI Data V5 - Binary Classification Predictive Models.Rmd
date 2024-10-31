@@ -55,7 +55,7 @@ library(grid)
 
 # Import preprocessed data 
 surv_df <- read.csv("preprocessed_data.csv")
-# #View(surv_df)
+#View(surv_df)View(surv_df)
 
 # Convert the event column to a factor
 surv_df$event <- factor(surv_df$event, levels = c(0, 1), labels = c("No AD", "AD"))
@@ -205,7 +205,7 @@ summary_metrics <- all_metricsv5 %>%
 summary_metrics
 ####################################
 
-# Plot ROC AUC for all models and feature sets
+# Plot all metrics for all models and feature sets
 BinaryAllModels_0 <- ggplot(summary_metrics, aes(x = feature_set, y = .estimate, fill = Model)) +
   geom_boxplot() +
   facet_wrap(~ .metric, scales = "free_y") +
@@ -224,12 +224,12 @@ print(BinaryAllModels_0)
 ggsave("Binary_All_Models_0.png", plot = BinaryAllModels_0, width = 10, height = 10)
 ```
 
-# Reorder the recipes (worst performing model should be on the left and best on the right) 
+# Reorder the recipes (worst performing model should be on the left and best on the right)
 
 ```{r}
 
 # Calculate the mean value for each feature set and model
-summary_metrics <- all_metrics %>%
+summary_metrics <- all_metricsv5 %>%
   group_by(feature_set, Model, .metric) %>%
   summarize(mean_estimate = mean(.estimate, na.rm = TRUE), .groups = "drop")
 
@@ -241,10 +241,10 @@ best_feature_order <- summary_metrics %>%
   pull(feature_set)
 
 # Ensure the factor levels are unique in the desired order
-all_metrics$feature_set <- factor(all_metrics$feature_set, levels = unique(best_feature_order))
+all_metricsv5$feature_set <- factor(all_metricsv5$feature_set, levels = unique(best_feature_order))
 
 # Plot with ordered feature sets on x-axis
-Binaryglm_All_ordered <- ggplot(all_metrics, aes(x = feature_set, y = .estimate, fill = Model)) +
+Binaryglm_All_ordered <- ggplot(all_metricsv5, aes(x = feature_set, y = .estimate, fill = Model)) +
   geom_boxplot() +
   facet_wrap(~ .metric, scales = "free_y") +
   labs(title = "Binary Classification - Comparison of Feature Sets Across Best Model", 
@@ -357,7 +357,7 @@ AIBL_subset <- read.csv("AIBL_subset.csv")
 # View(AIBL_subset)
 
 UKBB_subset <- read.csv("UKBB_subset.csv")
-# View(UKBB_subset)
+View(UKBB_subset)
 
 # View(surv_df)
 # Convert the event column to a factor

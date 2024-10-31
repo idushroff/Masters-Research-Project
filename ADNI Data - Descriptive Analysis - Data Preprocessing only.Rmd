@@ -240,7 +240,7 @@ IGNORE THE missing values for the DX.bl for now as it is already captured in the
 
 # prune the adni3 dataset to only have the columns we want in our table01
 adni4 <- adni3 %>% select(-DX.bl, -MMSE.bl, -mPACCtrailsB.bl, -EXAMDATE)
-# View(adni4)
+View(adni4)
 
 df <- adni4
 # Get time of AD event -- for each ID, arrange by time, pull out the rows with AD dx and take the first.

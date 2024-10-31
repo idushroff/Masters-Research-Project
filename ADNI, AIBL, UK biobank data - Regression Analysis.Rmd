@@ -90,38 +90,57 @@ library(naniar)
 
 # View all the rows with dataset = ADNI 
 ADNI <- data[data$dataset == "ADNI", ]
-View(ADNI)
+# View(ADNI)
 
 gg_miss_var(ADNI) + ggtitle("Missing Values in Each Column of ADNI Dataset")
 vis_miss(ADNI) + labs(title = "Heatmap of Missing Values in ADNI Dataset")
 
 # View all the rows with dataset = ABIL 
 AIBL <- data[data$dataset == "AIBL", ]
-View(AIBL)
+sum(is.na(AIBL$EDU))
+
+AIBL <- AIBL[!is.na(AIBL$EDU), ]
+sum(is.na(AIBL$EDU))
+# View(AIBL)
 
 gg_miss_var(AIBL) + ggtitle("Missing Values in Each Column of AIBL Dataset")
 vis_miss(AIBL) + labs(title = "Heatmap of Missing Values in AIBL Dataset")
 
 # View all the rows with dataset = UKBiobank 
 UKBB <- data[data$dataset == "UKB", ]
+# Check for any rows where EDU is NA
+sum(is.na(UKBB$EDU))
+UKBB <- UKBB[!is.na(UKBB$EDU), ]
+sum(is.na(UKBB$EDU))
+
+
+names(UKBB)[names(UKBB) == "AGE"] <- "AGE.followup"
+
+names(UKBB)[names(UKBB) == "AGE.bl"] <- "AGE"
+
+
+
 View(UKBB)
 
-gg_miss_var(UKBB) + ggtitle("Missing Values in Each Column of UKB Dataset")
-vis_miss(UKBB) + labs(title = "Heatmap of Missing Values in UKB Dataset")
-
-# View all the rows with conv = 0 
+# View all the rows with conv = 0
 nonconvertors <- data[data$conv == 0, ]
-View(nonconvertors)
+# View(nonconvertors)
 
 gg_miss_var(nonconvertors) + ggtitle("Missing Values in Each Column of nonconvertors Dataset")
 vis_miss(nonconvertors) + labs(title = "Heatmap of Missing Values in nonconvertors Dataset")
 
-# View all the rows with conv = 1 
+# View all the rows with conv = 1
 convertors <- data[data$conv == 1, ]
-View(convertors)
+# View(convertors)
 
 gg_miss_var(convertors) + ggtitle("Missing Values in Each Column of convertors Dataset")
 vis_miss(convertors) + labs(title = "Heatmap of Missing Values in convertors Dataset")
+
+# prune the datasets to only have the columns we want in our table01
+UKBB <- UKBB %>% select(-FH_na, -conv_fh, -APOE4_e4e4)
+AIBL <- AIBL %>% select(-FH_na, -conv_fh, -APOE4_e4e4)
+ADNI <- ADNI %>% select(-FH_na, -conv_fh, -APOE4_e4e4)
+View(UKBB)
 ```
 
 # Save preprocessed data to a CSV file
@@ -135,36 +154,27 @@ write.csv(UKBB, "UKBB_subset.csv", row.names=FALSE)
 
 ### Table 01 for UKBB
 
+\# prune the datasets to only have the columns we want in our table01
+
 ```{r}
 
-# prune the datasets to only have the columns we want in our table01
-UKBB <- UKBB %>% select(-FH_na, -conv_fh, -APOE4_e4e4)
-View(UKB)
-
-AIBL <- AIBL %>% select(-FH_na, -conv_fh, -APOE4_e4e4)
-AIBL <- AIBL %>% drop_na(EDU)
-# gg_miss_var(AIBL) + ggtitle("Missing Values in Each Column of AIBL Dataset")
-# vis_miss(AIBL) + labs(title = "Heatmap of Missing Values in AIBL Dataset")
-View(AIBL)
-
-ADNI <- ADNI %>% select(-FH_na, -conv_fh, -APOE4_e4e4)
 
 count_tablev7 <- ADNI %>%
   group_by(conv) %>%
   summarise(Count = n())
-View(count_tablev7)
+# View(count_tablev7)
 sum(count_tablev7$Count)
 
 count_tablev8 <- UKBB %>%
   group_by(conv) %>%
   summarise(Count = n())
-View(count_tablev8)
+# View(count_tablev8)
 sum(count_tablev8$Count)
 
 count_tablev9 <- AIBL %>%
   group_by(conv) %>%
   summarise(Count = n())
-View(count_tablev9)
+# View(count_tablev9)
 sum(count_tablev9$Count)
 
 
@@ -215,7 +225,7 @@ print(table1_ADNI)
 
 ## Regression analysis using the SNP FILE
 
-install relevant packages:
+1.  Install relevant packages:
 
 ```{r}
 
@@ -229,9 +239,11 @@ install.packages("GGally")
 library(GGally)
 ```
 
+2.  Load the Dataset
+
 ```{r}
 geno_covar <- readRDS("ukb_adni_genotypes_58_snps_v2.RDS")
-View(geno_covar)
+# View(geno_covar)
 
 
 print(geno_covar[geno_covar$FID == 1000015, ])
@@ -243,289 +255,4 @@ print(data[data$ID == 1000015, ])
 
 ```
 
-```{r}
-source('regression.R')
-
-# Test the function
-
-model_name='D_glm'
-
-preds_ukbb <- predict(fit_models[[model_name]], new_data = UKBB_subset, type = "prob") %>%
-    bind_cols(predict(fit_models[[model_name]], new_data = UKBB_subset)) %>%
-    bind_cols(UKBB_subset)
-
-merged_geno_df <- preds_ukbb %>% inner_join(geno_covar %>% select(-conv, -AGE, -SEX, -FH, -APOE4), by=c('ID'='FID'))
-
-result <- computeSumStats( yp_dat=merged_geno_df %>% pull(`.pred_No AD`), 
-                           merged_geno_df %>% select(-`.pred_No AD`), 
-                           is_binary=F)
-
-result_FH <- computeSumStats( yp_dat=merged_geno_df %>% pull(FH), 
-                           merged_geno_df %>% select(-`.pred_No AD`), 
-                           is_binary=F)
-
-result_true_labels <- computeSumStats( yp_dat=merged_geno_df %>% pull(conv), 
-                           merged_geno_df %>% select(-`.pred_No AD`), 
-                          is_binary=T)
-
-print(result)
-
-
-
-```
-
-I have used the compute sumstats function to run a linear regression model for each snp against all the other covariates preset in the snp (geno_covar file), and the ouput is a dataframe containing the estimated coefficients (`Est`), standard errors (`SE`), t-values (`t`), and p-values (`P`) for each SNP.
-
-I've plotted these statistics against each other to identify patterns using the following **Scatter Plots:**
-
--   **Estimates vs. P-values**: This plot helps identify SNPs with strong effects and significant associations.
-
--   **Estimates vs. Standard Errors**: This can show the precision of the estimates.
-
--   **t-values vs. P-values**: To see the relationship between the strength of association and statistical significance.
-
-```{r}
-
-# Scatter plot of Estimates vs P-values
-ggplot(result, aes(x = Est, y = -log10(P))) +
-  geom_point() +
-  labs(title = "Effect Size vs. Significance",
-       x = "Effect Size (Estimates)",
-       y = "-log10(P-value)") +
-  theme_minimal()
-
-# Scatter plot of Estimates vs Standard Errors
-ggplot(result, aes(x = Est, y = SE)) +
-  geom_point() +
-  labs(title = "Effect Size vs. Standard Errors",
-       x = "Effect Size (Estimates)",
-       y = "Standard Error") +
-  theme_minimal()
-
-# Scatter plot of t-values vs P-values
-ggplot(result, aes(x = t, y = -log10(P))) +
-  geom_point() +
-  labs(title = "t-value vs. Significance",
-       x = "t-value",
-       y = "-log10(P-value)") +
-  theme_minimal()
-
-```
-
-### **Scatter Plot of Estimates vs. -log10(P-values)**
-
--   This plot compares the effect sizes (estimates) of the SNPs to the significance of the association, where the p-values are transformed using `-log10`. A higher `-log10(P-value)` indicates a smaller p-value, which means more statistical significance.
-
--   **Interpretation**:
-
-    -   **High -log10(P-value)**: Indicates that the SNP is statistically significant. These are the SNPs with the smallest p-values.
-
-    -   **Low -log10(P-value)**: Indicates a less significant association. These are SNPs with larger p-values.
-
-    -   **Large Estimate & High -log10(P-value)**: SNPs in this region have a strong effect and are highly significant, suggesting a robust association with the outcome.
-
-    -   **Small Estimate & High -log10(P-value)**: SNPs with small effect sizes but significant p-values may be significant due to large sample sizes or subtle but real effects.
-
-    -   **Scatter Pattern**: If there's a clear trend or relationship between effect size and significance (e.g., larger effect sizes consistently result in smaller p-values), this can suggest that your proxy labels are effectively capturing real genetic associations.
-
-### **Scatter Plot of Estimates vs. Standard Errors**
-
--   This plot shows the relationship between the effect size estimates and their precision (standard errors).
-
--   **Interpretation**:
-
-    -   **Large effect size & Small standard error**: These are robust associations; the SNP effect is strong and well-estimated.
-
-    -   **Large effect size & Large standard error**: Suggests that the SNP might have a large effect, but it is less precise, possibly due to small sample size or high variability.
-
-    -   **Small effect size & Small standard error**: Likely represents SNPs with no significant effect but precise estimates.
-
-    -   **Small effect size & Large standard error**: Likely uninformative SNPs, with low effect and high uncertainty.
-
-### **Scatter Plot of t-values vs. -log10(P-values)**
-
--   This plot compares the t-values (which measure the strength of the association) with the transformed p-values (`-log10(P-value)`).
-
--   **Interpretation**:
-
-    -   **High t-value & High -log10(P-value)**: Indicates a strong association that is statistically significant.
-
-    -   **Low t-value & Low -log10(P-value)**: Indicates weak or non-significant associations.
-
-    -   **Clusters**: If most points cluster in the high t-value and high -log10(P-value) region, this suggests a group of SNPs with strong and significant effects.
-
-    -   **Outliers**: SNPs that deviate from the main cluster, especially if they have high t-values but low significance (low -log10(P-value)), might be interesting to explore further, as they could indicate unusual effects or potential errors
-
-#### **I've also made a Pairwise Comparison Plot as it** allows me to see relationships between all the statistical results for each SNP in a matrix of scatter plots.
-
-```{r}
-
-# Pairwise comparison plot
-ggpairs(result, columns = c("Est", "SE", "t", "P"),
-        title = "Pairwise Comparison of SNP Statistics")
-
-# note you need GGally package for the ggpairs function - it extends the ggplot2 package in R.
-```
-
--   **Diagonal plots**: Show the distribution of each statistic (e.g., histograms).
-
-    -   **Off-diagonal scatter plots**: Show the relationships between pairs of statistics.
-
-        -   **Correlations**: A linear pattern suggests a strong relationship between the statistics.
-
-        -   **Clusters**: Groups of SNPs clustering together might indicate similar behavior across statistics.
-
-        -   **Outliers**: Points far from the rest could indicate interesting SNPs for further investigation
-
-```{r}
-# Perform PCA
-pca_result <- prcomp(result %>% select(Est, SE, t, P), scale. = TRUE)
-
-# Extract PCA results
-pca_data <- as.data.frame(pca_result$x)
-pca_data$rs <- result$rs  # Add SNP names to the data
-
-# Plot the first two principal components
-library(ggplot2)
-ggplot(pca_data, aes(x = PC1, y = PC2, label = rs)) +
-  geom_point() +
-  geom_text(vjust = -0.5, hjust = 0.5, size = 3) +
-  labs(title = "PCA of SNP Statistics",
-       x = "Principal Component 1",
-       y = "Principal Component 2") +
-  theme_minimal()
-
-```
-
-### this pca plot reduces the dimensionality of our data and shows how SNPs cluster based on their combined statistics.
-
--   
-
-    -   **Clusters of SNPs**: SNPs that cluster together may have similar effects across all the statistics.
-
-    -   **Outliers in PCA space**: SNPs that don't cluster with others may have unique effects and could be particularly interesting.
-
-# **snp rs2075650 -** Located close to [ApoE4](https://www.snpedia.com/index.php/ApoE4 "ApoE4"), yet may independently (also) influence risk of [Alzheimer's disease](https://www.snpedia.com/index.php/Alzheimer%27s_disease "Alzheimer's disease").
-
--------------week 7---------
-
-```{r}
-
-
-# Use read.csv() to load a CSV file
-data <- read.csv("df_comb_ml.csv")
-# View(data)
-
-# load in the snp data 
-snpfile <- readRDS("ukb_adni_genotypes_58_snps_v2.RDS")
-# View(snpfile)
-
-
-# First, rename the 'ID' column in the data dataset to 'FID' to match the snpfile dataset
-data$FID <- data$ID
-
-# Merge keeping only rows with matching FID/ID
-geno_covar <- merge(snpfile, data, by = "FID")
-
-# names(geno_covar)
-
-
-# # Filter rows where FH.x and FH.y are not the same
-# different_rows <- geno_covar[geno_covar$SEX.x != geno_covar$SEX.y, ]
-# different_rows
-# 
-# # Filter rows where FH.x and FH.y are not the same
-# different_rows <- geno_covar[geno_covar$conv.x != geno_covar$conv.y, ]
-# different_rows
-
-# DELETE THE UNUSEFUL COLUMNS
-# Load dplyr if you haven't already
-library(dplyr)
-
-# Example: Remove specific columns using dplyr
-geno_covar <- geno_covar %>% select(-FH.x, -AGE.x, -Assess_center, - APOE4.x, APOE4_e4e4, -SEX.x, -FH_na.x, -ID, -FH_na.x)
-
-geno_covar <- geno_covar %>% select(-conv.x)
-
-View(geno_covar)
-```
-
-```{r}
-
-
-computeSumStats <- function(yp, geno_covar) {
-  # Identify columns starting with 'rs'
-  rss = colnames(geno_covar)[grepl('^rs', colnames(geno_covar))]
-  
-  # Compute linear model summary statistics for each SNP
-  sumstats = pbsapply(rss, \(rs) {
-    # Subset data to include the current SNP, covariates, and remove geno_batch
-    data_subset <- geno_covar %>%
-      select(all_of(rs), -geno_batch, -one_of(setdiff(rss, rs)))
-    
-    # Combine yp and data_subset, remove rows with any NAs
-    data_for_model <- data.frame(yp = yp, data_subset) %>%
-      na.omit()
-    
-    # Fit the linear model with yp as the dependent variable
-    m <- lm(yp ~ ., data = data_for_model)
-    
-    # Extract coefficients and filter for the SNP row
-    summary(m) %>%
-      coef() %>%
-      as.data.frame() %>%
-      filter(grepl("^rs", rownames(.)))
-    
-  }, simplify = F, USE.NAMES = T) %>%
-    bind_rows() %>%
-    magrittr::set_colnames(c('Est', 'SE', 't', 'P')) %>%
-    rownames_to_column('rs')
-}
-
-# Define the dependent variable 'yp' as the conversion status 'conv.y'
-yp <- geno_covar$conv.y
-
-# Test the function
-result <- computeSumStats(yp, geno_covar)
-print(result)
-
-```
-
-```{r}
-# Assuming `result` contains the output of computeSumStats with SNP names, p-values
-# We will calculate -log10 of the p-values and plot them against Family History
-
-# Step 1: Calculate -log10(p-values)
-result$log10_P <- -log10(result$P)
-
-# Step 2: Visualize the log10(p-values)
-library(ggplot2)
-
-# Scatter plot of -log10(p-values) across SNPs
-ggplot(result, aes(x = rs, y = log10_P)) +
-  geom_point() +
-  labs(title = "-log10(p-values) for SNPs",
-       x = "SNPs",
-       y = "-log10(p-values)") +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1),  # Rotate SNP names if needed
-        plot.title = element_text(hjust = 0.5))
-
-```
-
-```{r}
-
-# Step 3: Create a family history comparison - assuming FH.y is binary (0 or 1)
-# Create an aggregated dataset based on family history (if available per SNP)
-
-# Example of plotting log10(P) by Family History if aggregated at the individual level
-# merged_result <- merge(result, geno_covar[, c("FID", "FH.y")], by.x = "rs", by.y = "FID")
-
-# Example scatter plot of log10(p-values) vs family history, assuming a correct merge
-ggplot(merged_result, aes(x = FH.y, y = log10_P)) +
-  geom_point() +
-  labs(title = "-log10(p-values) vs Family History",
-       x = "Family History (FH.y)",
-       y = "-log10(p-values)") +
-  theme_minimal()
-
-```
+3.  Binary Classification - Demographics - XGBoost Model Predictions
