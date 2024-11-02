@@ -430,7 +430,7 @@ evaluation_time_points <- seq(0, 144, 6)
 models_list <- list(
   D_RSF = workflow() %>% 
     add_recipe(recipes_list[["D"]]) %>% 
-    add_model(oblique_spec),
+    add_model(weibull_spec),
   
   Fh_RSF = workflow() %>% 
     add_recipe(recipes_list[["Fh"]]) %>% 
@@ -475,24 +475,56 @@ for (model_name in names(fit_models)) {
                          eval_time = evaluation_time_points)
   
   # Get predictions and calculate ROC AUC for UKBB
-  preds_ukbb <- predict(fit, 
-                        new_data = UKBB_subset, 
-                        type = "survival", 
-                        eval_time = evaluation_time_points)
-  print(head(preds_ukbb)) 
-  roc_auc_ukbb <- survival_metrics(preds_ukbb, 
-                                   truth = UKBB_subset$conv, 
-                                   .eval_time = evaluation_time_points)
+  # preds_ukbb <- predict(fit, 
+  #                       new_data = UKBB_subset)
+  
+  # c_ukbb <- concordance_survival(UKBB_subset %>% add_column(preds=preds_ukbb$.pred_time), 
+  #                                    truth = event_surv, 
+  #                                    estimate= preds)
+  
+ 
+  # https://www.tidymodels.org/learn/statistics/survival-metrics/
+  # I could probabl use augment()) for this
+  UKBB_subset$event_surv = Surv(UKBB_subset$event_time, 1*(UKBB_subset$conv=="AD") )
+  preds_ukbb_time <- predict(fit, 
+                         new_data = UKBB_subset, 
+                        type = 'time')
+  preds_ukbb_survival <- predict(fit, 
+                        new_data = UKBB_subset,
+                         eval_time = evaluation_time_points, type = 'survival')
+  preds_ukbb_surv = preds_ukbb_survival
+  preds_ukbb_surv$.pred_time = preds_ukbb$.pred_time
+  preds_ukbb_surv$surv_obj = UKBB_subset$event_surv
+  preds_ukbb_surv = .censoring_weights_graf(fit, preds_ukbb_surv)
+ 
+  survival_metrics <- metric_set(brier_survival_integrated, 
+                                 roc_auc_survival, 
+                                 concordance_survival)
+  surv_metrics_ukbb <- survival_metrics(preds_ukbb_surv, 
+                                     truth = surv_obj, 
+                                      pred)
+  
   
   # Get predictions and calculate ROC AUC for AIBL
-  preds_aibl <- predict(fit, 
-                        new_data = AIBL_subset, 
-                        type = "survival", 
-                        eval_time = evaluation_time_points)
-  
-  roc_auc_aibl <- survival_metrics(preds_aibl, 
-                                   truth = AIBL_subset$conv, 
-                                   .eval_time = evaluation_time_points)
+  AIBL_subset$event_surv = Surv(AIBL_subset$event_time, 1*(AIBL_subset$conv=="AD") )
+
+  preds_aibl_time <- predict(fit, 
+                         new_data = AIBL_subset, 
+                        type = 'time')
+  preds_ukbb_survival <- predict(fit, 
+                        new_data = AIBL_subset,
+                         eval_time = evaluation_time_points, type = 'survival')
+  preds_ukbb_surv = preds_ukbb_survival
+  preds_ukbb_surv$.pred_time = preds_ukbb$.pred_time
+  preds_ukbb_surv$surv_obj = AIBL_subset$event_surv
+  preds_ukbb_surv = .censoring_weights_graf(fit, preds_ukbb_surv)
+ 
+  survival_metrics <- metric_set(brier_survival_integrated, 
+                                 roc_auc_survival, 
+                                 concordance_survival)
+  surv_metrics_ukbb <- survival_metrics(preds_ukbb_surv, 
+                                     truth = surv_obj, 
+                                      pred)
 
   # Store the results
   roc_auc_results <- roc_auc_results %>%
