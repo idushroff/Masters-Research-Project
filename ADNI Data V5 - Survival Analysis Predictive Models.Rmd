@@ -462,10 +462,12 @@ roc_auc_results <- data.frame(
 # Cross-validation resampling setup
 set.seed(1)
 repeated_folds <- vfold_cv(surv_df1, v = 5, repeats = 3)
-survival_metrics <- metric_set(roc_auc_survival)
-
+  dynamic_survival_metrics <- metric_set(brier_survival_integrated, 
+                                 roc_auc_survival)
+  
 # Train and evaluate models on multiple datasets
-for (model_name in names(fit_models)) {
+res=lapply(names(fit_models), \(model_name) {
+  print(str_c('Evaluating ', model_name))
   fit <- fit_models[[model_name]]
   
   # Get predictions and calculate ROC AUC for ADNI (Training Set)
@@ -474,15 +476,6 @@ for (model_name in names(fit_models)) {
                          type = "survival", 
                          eval_time = evaluation_time_points)
   
-  # Get predictions and calculate ROC AUC for UKBB
-  # preds_ukbb <- predict(fit, 
-  #                       new_data = UKBB_subset)
-  
-  # c_ukbb <- concordance_survival(UKBB_subset %>% add_column(preds=preds_ukbb$.pred_time), 
-  #                                    truth = event_surv, 
-  #                                    estimate= preds)
-  
- 
   # https://www.tidymodels.org/learn/statistics/survival-metrics/
   # I could probabl use augment()) for this
   UKBB_subset$event_surv = Surv(UKBB_subset$event_time, 1*(UKBB_subset$conv=="AD") )
@@ -497,13 +490,14 @@ for (model_name in names(fit_models)) {
   preds_ukbb_surv$surv_obj = UKBB_subset$event_surv
   preds_ukbb_surv = .censoring_weights_graf(fit, preds_ukbb_surv)
  
-  survival_metrics <- metric_set(brier_survival_integrated, 
-                                 roc_auc_survival, 
-                                 concordance_survival)
-  surv_metrics_ukbb <- survival_metrics(preds_ukbb_surv, 
+
+  surv_metrics_ukbb <- dynamic_survival_metrics(preds_ukbb_surv, 
                                      truth = surv_obj, 
-                                      pred)
-  
+                                      .pred)
+  cindex_ukbb <- concordance_survival(preds_ukbb_surv, 
+                                     truth = surv_obj, 
+                                      estimate=.pred_time)
+  res_ukb=bind_rows(surv_metrics_ukbb, cindex_ukbb)
   
   # Get predictions and calculate ROC AUC for AIBL
   AIBL_subset$event_surv = Surv(AIBL_subset$event_time, 1*(AIBL_subset$conv=="AD") )
@@ -511,34 +505,34 @@ for (model_name in names(fit_models)) {
   preds_aibl_time <- predict(fit, 
                          new_data = AIBL_subset, 
                         type = 'time')
-  preds_ukbb_survival <- predict(fit, 
+  preds_aibl_survival <- predict(fit, 
                         new_data = AIBL_subset,
                          eval_time = evaluation_time_points, type = 'survival')
-  preds_ukbb_surv = preds_ukbb_survival
-  preds_ukbb_surv$.pred_time = preds_ukbb$.pred_time
-  preds_ukbb_surv$surv_obj = AIBL_subset$event_surv
-  preds_ukbb_surv = .censoring_weights_graf(fit, preds_ukbb_surv)
+  preds_aibl_surv = preds_aibl_survival
+  preds_aibl_surv$.pred_time = preds_aibl_time$.pred_time
+  preds_aibl_surv$surv_obj = AIBL_subset$event_surv
+  preds_aibl_surv = .censoring_weights_graf(fit, preds_aibl_surv)
  
-  survival_metrics <- metric_set(brier_survival_integrated, 
-                                 roc_auc_survival, 
-                                 concordance_survival)
-  surv_metrics_ukbb <- survival_metrics(preds_ukbb_surv, 
+  surv_metrics_aibl <- dynamic_survival_metrics(preds_aibl_surv, 
                                      truth = surv_obj, 
-                                      pred)
-
-  # Store the results
-  roc_auc_results <- roc_auc_results %>%
-    add_row(
-      Model = model_name,
-      Train_ROC_AUC = round(mean(roc_auc_train$.estimate), 3),
-      UKBB_ROC_AUC = round(mean(roc_auc_ukbb$.estimate), 3),
-      AIBL_ROC_AUC = round(mean(roc_auc_aibl$.estimate), 3)
-    )
-}
+                                      .pred)
+  cindex_aibl <- concordance_survival(preds_aibl_surv, 
+                                     truth = surv_obj, 
+                                      estimate=.pred_time)
+  res_aibl=bind_rows(surv_metrics_aibl, cindex_aibl)
+  # # Store the results
+  # roc_auc_results <- roc_auc_results %>%
+  #   add_row(
+  #     Model = model_name,
+  #     UKBB_ROC_AUC = round(mean(roc_auc_ukbb$.estimate), 3),
+  #     AIBL_ROC_AUC = res_aibl
+  #   )
+  res_aibl %>% mutate(study='AIBL') %>% bind_rows(res_ukb %>% mutate(study='UKBB')) %>% mutate(model=model_name)
+})
 
 # View results
-print(roc_auc_results)
-
+res_all=bind_rows(res)
+print(res_all)
 ```
 
 ```{r}
