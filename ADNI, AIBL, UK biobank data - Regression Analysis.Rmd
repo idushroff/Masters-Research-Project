@@ -90,6 +90,8 @@ library(naniar)
 
 # View all the rows with dataset = ADNI 
 ADNI <- data[data$dataset == "ADNI", ]
+length(unique(AIBL$ID))
+length(unique(UKBB$ID))
 # View(ADNI)
 
 gg_miss_var(ADNI) + ggtitle("Missing Values in Each Column of ADNI Dataset")

@@ -354,22 +354,20 @@ ADNI_subset <- read.csv("ADNI_subset.csv")
 # View(ADNI_subset)
 
 AIBL_subset <- read.csv("AIBL_subset.csv")
-# View(AIBL_subset)
+View(AIBL_subset)
 
 UKBB_subset <- read.csv("UKBB_subset.csv")
 View(UKBB_subset)
 
-# View(surv_df)
+# Import preprocessed data 
+surv_df <- read.csv("preprocessed_data.csv")
+View(surv_df)
+
 # Convert the event column to a factor
 UKBB_subset$conv <- factor(UKBB_subset$conv, levels = c(0, 1), labels = c("No AD", "AD"))
 
 # Convert the event column to a factor
 AIBL_subset$conv <- factor(AIBL_subset$conv, levels = c(0, 1), labels = c("No AD", "AD"))
-
-
-# Import preprocessed data 
-surv_df <- read.csv("preprocessed_data.csv")
-# View(surv_df)
 
 # Convert the event column to a factor
 surv_df$event <- factor(surv_df$event, levels = c(0, 1), labels = c("No AD", "AD"))
@@ -377,6 +375,8 @@ surv_df$event <- factor(surv_df$event, levels = c(0, 1), labels = c("No AD", "AD
 # Convert PTGENDER to numeric (0 for Male, 1 for Female)
 surv_df <- surv_df %>%
   mutate(SEX = ifelse(SEX == "Male", 0, 1))
+
+
 ```
 
 ```{r}
@@ -412,6 +412,24 @@ models_list <- list(
   DGFh_glm = workflow() %>% add_recipe(recipes_list[["DGFh"]]) %>% add_model(glm_spec)
 )
 
+# List of final models
+models_list <- list(
+  D_glm = workflow() %>% add_recipe(recipes_list[["D"]]) %>% add_model(glm_spec),
+  Fh_glm = workflow() %>% add_recipe(recipes_list[["Fh"]]) %>% add_model(glm_spec),
+  DFh_glm = workflow() %>% add_recipe(recipes_list[["DFh"]]) %>% add_model(glm_spec),
+  DGFh_glm = workflow() %>% add_recipe(recipes_list[["DGFh"]]) %>% add_model(glm_spec)
+)
+
+
+# List of final models
+models_list <- list(
+  D_xgb = workflow() %>% add_recipe(recipes_list[["D"]]) %>% add_model(xgb_spec),
+  Fh_xgb = workflow() %>% add_recipe(recipes_list[["Fh"]]) %>% add_model(xgb_spec),
+  DFh_xgb = workflow() %>% add_recipe(recipes_list[["DFh"]]) %>% add_model(xgb_spec),
+  DGFh_xgb = workflow() %>% add_recipe(recipes_list[["DGFh"]]) %>% add_model(xgb_spec)
+)
+
+
 # Train all models on ADNI dataset
 fit_models <- lapply(models_list, function(model_wflow) {
   model_wflow %>% fit(data = surv_df)
@@ -437,7 +455,7 @@ for (model_name in names(fit_models)) {
   
   # Store the ROC AUC metric for training set
   roc_auc_train <- preds_train %>%
-    roc_auc(truth = event, `.pred_No AD`)  # `event` is the target column in surv_df
+    roc_auc(truth = event, '.pred_No AD')  # `event` is the target column in surv_df
 
   
   # Get predictions on UKBB dataset
@@ -447,9 +465,8 @@ for (model_name in names(fit_models)) {
   
   # Store the ROC AUC metric for UKBB
   roc_auc_ukbb <- preds_ukbb %>%
-    roc_auc(truth = conv, `.pred_No AD`)
+    roc_auc(truth = conv, '.pred_No AD')
 
-  
   # Get predictions on AIBL dataset
   preds_aibl <- predict(fit, new_data = AIBL_subset, type = "prob") %>%
     bind_cols(predict(fit, new_data = AIBL_subset)) %>%

@@ -366,17 +366,17 @@ ADNI_subset <- read.csv("ADNI_subset.csv")
 # View(ADNI_subset)
 
 AIBL_subset <- read.csv("AIBL_subset.csv")
-# View(AIBL_subset)
+View(AIBL_subset)
 
 UKBB_subset <- read.csv("UKBB_subset.csv")
 # View(UKBB_subset)
 
 # View(surv_df)
 # Convert the event column to a factor
-UKBB_subset$conv <- factor(UKBB_subset$conv, levels = c(0, 1), labels = c("No AD", "AD"))
-
-# Convert the event column to a factor
-AIBL_subset$conv <- factor(AIBL_subset$conv, levels = c(0, 1), labels = c("No AD", "AD"))
+# UKBB_subset$conv <- factor(UKBB_subset$conv, levels = c(0, 1), labels = c("No AD", "AD"))
+# 
+# # Convert the event column to a factor
+# AIBL_subset$conv <- factor(AIBL_subset$conv, levels = c(0, 1), labels = c("No AD", "AD"))
 
 # Import preprocessed data 
 surv_df <- read.csv("preprocessed_data.csv") 
@@ -391,12 +391,27 @@ surv_df1 <- surv_df %>%
   mutate(diagnosis_surv = Surv(VISCODE, event)) %>%
   select(diagnosis_surv, everything())
 
-# View(surv_df1)
+View(surv_df1)
+
+# Create survival object
+AIBL_subset <- AIBL_subset %>% 
+  mutate(diagnosis_surv = Surv(event_time, conv)) %>%
+  select(diagnosis_surv, everything())
+
+# Create survival object
+UKBB_subset <- UKBB_subset %>% 
+  mutate(diagnosis_surv = Surv(event_time, conv)) %>%
+  select(diagnosis_surv, everything())
 
 # Convert SEX column to numeric in all datasets to prevent coercion issues
 ADNI_subset$SEX <- as.numeric(ADNI_subset$SEX)
 AIBL_subset$SEX <- as.numeric(AIBL_subset$SEX)
 UKBB_subset$SEX <- as.numeric(UKBB_subset$SEX)
+
+# Convert `conv` to binary format (0/1)
+# UKBB_subset$conv <- ifelse(UKBB_subset$conv == "No AD", 0, 1)
+# AIBL_subset$conv <- ifelse(AIBL_subset$conv == "No AD", 0, 1)
+
 ```
 
 ```{r}
@@ -413,73 +428,54 @@ recipes_list <- list(
   DGFh = recipe(diagnosis_surv ~ AGE + SEX + EDU + APOE4 + FH, data = surv_df1)
 )
 
-# Define Weibull and Random Survival Forest models
-weibull_spec <- survival_reg() %>% 
-  set_engine("survival") %>% 
-  set_mode("censored regression")
 
-oblique_spec <- rand_forest(trees = 1000, mtry = 2, min_n = 1) %>% 
-  set_engine("aorsf") %>% 
-  set_mode("censored regression")
-
-# Define time points for AUC evaluation
-evaluation_time_points <- seq(0, 144, 6)
-# evaluation_time_points <- 75
-
-# List workflows for each model
-models_list <- list(
-  D_RSF = workflow() %>% 
-    add_recipe(recipes_list[["D"]]) %>% 
-    add_model(oblique_spec),
+#########################################################
+# Iterate through recipes and run models for each
+for (i in seq_along(recipes_list)) {
+  # Select the current recipe
+  current_recipe <- recipes_list[[i]]
   
-  Fh_RSF = workflow() %>% 
-    add_recipe(recipes_list[["Fh"]]) %>% 
-    add_model(oblique_spec),
-  
-  DFh_RSF = workflow() %>% 
-    add_recipe(recipes_list[["DFh"]]) %>% 
-    add_model(oblique_spec),
-  
-  DGFh_WR = workflow() %>% 
-    add_recipe(recipes_list[["DGFh"]]) %>% 
-    add_model(weibull_spec)
-)
 
-# Train models on ADNI dataset
-fit_models <- lapply(models_list, function(model_wflow) {
-  model_wflow %>% fit(data = surv_df1)
-})
+  # Random Forest Workflow
+  oblique_wflow <- workflow() %>%
+    add_recipe(current_recipe) %>%
+    add_model(rand_forest(trees = 1000, 
+                          mtry = mtry = 2, 
+                          min_n = 1) %>%
+                set_engine("aorsf") %>%
+                set_mode("censored regression"))
 
-# Data frame to store ROC AUC results
-roc_auc_results <- data.frame(
-  Model = character(),
-  Train_ROC_AUC = numeric(),
-  UKBB_ROC_AUC = numeric(),
-  AIBL_ROC_AUC = numeric(),
-  stringsAsFactors = FALSE
-)
 
-# Cross-validation resampling setup
-set.seed(1)
-repeated_folds <- vfold_cv(surv_df1, v = 5, repeats = 3)
-survival_metrics <- metric_set(roc_auc_survival)
 
-# Train and evaluate models on multiple datasets
-for (model_name in names(fit_models)) {
-  fit <- fit_models[[model_name]]
+  # Define evaluation metrics for survival analysis
+  survival_metrics <- metric_set(brier_survival_integrated, 
+                                 roc_auc_survival, 
+                                 concordance_survival)
   
-  # Get predictions and calculate ROC AUC for ADNI (Training Set)
-  preds_train <- predict(fit, 
-                         new_data = surv_df1, 
-                         type = "survival", 
-                         eval_time = evaluation_time_points)
+  # Set evaluation time points for metrics
+  evaluation_time_points <- seq(0, 144, 6)
+
+  # Cross-validation resampling (for all models)
+  set.seed(1)
+  oblique_res <- tune_grid(oblique_wflow, 
+                           resamples = repeated_folds, 
+                           grid = rf_grid, 
+                           metrics = survival_metrics, 
+                           eval_time = evaluation_time_points, 
+                           control = control_grid(save_pred = TRUE))
   
+  # Store the results for each model
+  results_list[[paste0("Feature_Set_", names(recipes_list)[i], "_RandomForest")]] <- oblique_res
+}
+
+
   # Get predictions and calculate ROC AUC for UKBB
   preds_ukbb <- predict(fit, 
                         new_data = UKBB_subset, 
                         type = "survival", 
                         eval_time = evaluation_time_points)
   print(head(preds_ukbb)) 
+  
   roc_auc_ukbb <- survival_metrics(preds_ukbb, 
                                    truth = UKBB_subset$conv, 
                                    .eval_time = evaluation_time_points)
@@ -506,6 +502,84 @@ for (model_name in names(fit_models)) {
 
 # View results
 print(roc_auc_results)
+
+```
+
+```{r}
+library(tidymodels)
+library(dplyr)
+library(broom)
+
+# Define recipes for models
+recipes_list <- list(
+  D = recipe(diagnosis_surv ~ AGE + SEX + EDU, data = surv_df1),
+  Fh = recipe(diagnosis_surv ~ FH, data = surv_df1),
+  DFh = recipe(diagnosis_surv ~ AGE + SEX + EDU + FH, data = surv_df1),
+  DGFh = recipe(diagnosis_surv ~ AGE + SEX + EDU + APOE4 + FH, data = surv_df1)
+)
+
+# List to store results
+roc_auc_results <- tibble(Model = character(), Train_ROC_AUC = numeric(), UKBB_ROC_AUC = numeric(), AIBL_ROC_AUC = numeric())
+
+# Define evaluation metrics for survival analysis
+survival_metrics <- metric_set(roc_auc_survival, concordance_survival)
+evaluation_time_points <- seq(0, 144, 6)
+
+# Iterate through recipes and run models for each
+for (i in seq_along(recipes_list)) {
+  # Select the current recipe
+  current_recipe <- recipes_list[[i]]
+  
+  # Random Forest Workflow without tuning
+  oblique_wflow <- workflow() %>%
+    add_recipe(current_recipe) %>%
+    add_model(
+      rand_forest(trees = 1000, mtry = 2, min_n = 1) %>%
+        set_engine("aorsf") %>%
+        set_mode("censored regression")
+    )
+
+  # Fit the model to the training data
+  final_fit <- fit(oblique_wflow, data = surv_df1)
+
+  # Get predictions for the training set
+  preds_train <- predict(final_fit, new_data = surv_df1, type = "survival", eval_time = evaluation_time_points)
+
+  # Extract the survival probabilities at the evaluation time points
+  train_probs <- preds_train %>% 
+    select(-.pred) %>%  # Remove the first column which is usually the time column
+    as.data.frame()  # Convert to a data frame for easier manipulation
+
+  # Calculate ROC AUC for the training set
+  roc_auc_train <- roc_auc_survival(train_probs, truth = surv_df1$event, .eval_time = evaluation_time_points)
+
+  # Get predictions and calculate ROC AUC for UKBB
+  preds_ukbb <- predict(final_fit, new_data = UKBB_subset, type = "survival", eval_time = evaluation_time_points)
+  ukbb_probs <- preds_ukbb %>% select(-.pred) %>% as.data.frame()
+  roc_auc_ukbb <- roc_auc_survival(ukbb_probs, truth = UKBB_subset$conv, .eval_time = evaluation_time_points)
+
+  # Get predictions and calculate ROC AUC for AIBL
+  preds_aibl <- predict(final_fit, new_data = AIBL_subset, type = "survival", eval_time = evaluation_time_points)
+  aibl_probs <- preds_aibl %>% select(-.pred) %>% as.data.frame()
+  roc_auc_aibl <- roc_auc_survival(aibl_probs, truth = AIBL_subset$conv, .eval_time = evaluation_time_points)
+
+  # Calculate mean ROC AUC for each dataset and store results
+  model_name <- paste0("Feature_Set_", names(recipes_list)[i], "_RandomForest")
+  roc_auc_results <- roc_auc_results %>%
+    add_row(
+      Model = model_name,
+      Train_ROC_AUC = round(mean(roc_auc_train$.estimate), 3),
+      UKBB_ROC_AUC = round(mean(roc_auc_ukbb$.estimate), 3),
+      AIBL_ROC_AUC = round(mean(roc_auc_aibl$.estimate), 3)
+    )
+}
+
+# View results
+print(roc_auc_results)
+
+range(surv_df1$VISCODE)
+range(UKBB_subset$event_time)
+range(AIBL_subset$event_time)
 
 ```
 

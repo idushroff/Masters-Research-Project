@@ -97,7 +97,7 @@ D_xgb_plot_v2 <- ggplot(D_xgb_df, aes(x = snp_effect_size, y = D_xgb)) +
   labs(
     title = "Regression Analysis Results",
     x = "SNP Effect Size (Coefficient of Regression Actual Labels)",
-    y = "Demographics Predictions XGB Model)"
+    y = "D_xgb Predictions"
   ) +
   theme_minimal() +
   theme(
@@ -206,7 +206,7 @@ Fh_glm_plot_v2 <- ggplot(Fh_glm_df, aes(x = snp_effect_size, y = Fh_glm)) +
   labs(
     title = "Regression Analysis Results",
     x = "SNP Effect Size (Coefficient of Regression Actual Labels)",
-    y = "Demographics Predictions GLM Model"
+    y = "Fh_glm Predictions"
   ) +
   theme_minimal() +
   theme(
@@ -306,7 +306,7 @@ DFh_xgb_plot_v2 <- ggplot(DFh_xgb_df, aes(x = snp_effect_size, y = DFh_xgb)) +
   labs(
     title = "Regression Analysis Results",
     x = "SNP Effect Size (Coefficient of Regression Actual Labels)",
-    y = "Demographics Predictions XGB Model"
+    y = "DFh_xgb Predictions"
   ) +
   theme_minimal() +
   theme(
@@ -398,7 +398,7 @@ DGFh_glm_plot_v2 <- ggplot(DGFh_glm_df, aes(x = snp_effect_size, y = DGFh_glm)) 
   labs(
     title = "Regression Analysis Results",
     x = "SNP Effect Size (Coefficient of Regression Actual Labels)",
-    y = "Demographics Predictions GLM Model"
+    y = "DGFh_glm Predictions"
   ) +
   theme_minimal() +
   theme(
