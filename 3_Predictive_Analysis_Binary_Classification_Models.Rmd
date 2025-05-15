@@ -4,7 +4,7 @@ output: html_document
 date: "2023-03-29"
 ---
 
-# ADNI Data Version 5 - Binary Classification Predictive Models - testing over specific hyperparameter values + trying one recipe over all models
+# 3_Predictive_Analysis_Binary_Classification_Models
 
 ## Install and load the relevant packages
 
@@ -265,7 +265,7 @@ ggsave("Binary_All_ordered.png", plot = Binaryglm_All_ordered, width = 10, heigh
 
 ```{r}
 # Filter for AUC-ROC metric only
-roc_auc_metrics <- all_metrics %>%
+roc_auc_metrics <- all_metricsv5 %>%
   filter(.metric == "roc_auc")
 
 # Reorder feature sets based on the average AUC-ROC, from worst to best
@@ -281,11 +281,11 @@ roc_auc_metrics$feature_set <- factor(roc_auc_metrics$feature_set, levels = uniq
 # Plot ROC AUC for each feature set, ordered on the x-axis
 Binaryglm_AUC_Only <- ggplot(roc_auc_metrics, aes(x = feature_set, y = .estimate, fill = Model)) +
   geom_boxplot() +
-  labs(title = "Binary Classification - AUC-ROC Comparison Across Feature Sets", 
+  labs(title = "Binary Classification - Comparison Across Feature Sets", 
        x = "Feature Set(s)", 
        y = "AUC-ROC") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
-  theme_light(base_size = 13) + 
+  theme_light(base_size = 25) + 
   theme(legend.position = 'bottom')
 
 # Print the AUC-ROC box plot
@@ -354,14 +354,14 @@ ADNI_subset <- read.csv("ADNI_subset.csv")
 # View(ADNI_subset)
 
 AIBL_subset <- read.csv("AIBL_subset.csv")
-View(AIBL_subset)
+# View(AIBL_subset)
 
 UKBB_subset <- read.csv("UKBB_subset.csv")
-View(UKBB_subset)
+# View(UKBB_subset)
 
 # Import preprocessed data 
 surv_df <- read.csv("preprocessed_data.csv")
-View(surv_df)
+# View(surv_df)
 
 # Convert the event column to a factor
 UKBB_subset$conv <- factor(UKBB_subset$conv, levels = c(0, 1), labels = c("No AD", "AD"))
@@ -404,14 +404,14 @@ glm_spec <- logistic_reg() %>%
   set_engine("glm") %>%
   set_mode("classification")
 
-# List of final models
-models_list <- list(
-  D_xgb = workflow() %>% add_recipe(recipes_list[["D"]]) %>% add_model(xgb_spec),
-  Fh_glm = workflow() %>% add_recipe(recipes_list[["Fh"]]) %>% add_model(glm_spec),
-  DFh_xgb = workflow() %>% add_recipe(recipes_list[["DFh"]]) %>% add_model(xgb_spec),
-  DGFh_glm = workflow() %>% add_recipe(recipes_list[["DGFh"]]) %>% add_model(glm_spec)
-)
-
+# # List of final models
+# models_list <- list(
+#   D_xgb = workflow() %>% add_recipe(recipes_list[["D"]]) %>% add_model(xgb_spec),
+#   Fh_glm = workflow() %>% add_recipe(recipes_list[["Fh"]]) %>% add_model(glm_spec),
+#   DFh_xgb = workflow() %>% add_recipe(recipes_list[["DFh"]]) %>% add_model(xgb_spec),
+#   DGFh_glm = workflow() %>% add_recipe(recipes_list[["DGFh"]]) %>% add_model(glm_spec)
+# )
+# 
 # List of final models
 models_list <- list(
   D_glm = workflow() %>% add_recipe(recipes_list[["D"]]) %>% add_model(glm_spec),
@@ -421,13 +421,13 @@ models_list <- list(
 )
 
 
-# List of final models
-models_list <- list(
-  D_xgb = workflow() %>% add_recipe(recipes_list[["D"]]) %>% add_model(xgb_spec),
-  Fh_xgb = workflow() %>% add_recipe(recipes_list[["Fh"]]) %>% add_model(xgb_spec),
-  DFh_xgb = workflow() %>% add_recipe(recipes_list[["DFh"]]) %>% add_model(xgb_spec),
-  DGFh_xgb = workflow() %>% add_recipe(recipes_list[["DGFh"]]) %>% add_model(xgb_spec)
-)
+# # List of final models
+# models_list <- list(
+#   D_xgb = workflow() %>% add_recipe(recipes_list[["D"]]) %>% add_model(xgb_spec),
+#   Fh_xgb = workflow() %>% add_recipe(recipes_list[["Fh"]]) %>% add_model(xgb_spec),
+#   DFh_xgb = workflow() %>% add_recipe(recipes_list[["DFh"]]) %>% add_model(xgb_spec),
+#   DGFh_xgb = workflow() %>% add_recipe(recipes_list[["DGFh"]]) %>% add_model(xgb_spec)
+# )
 
 
 # Train all models on ADNI dataset

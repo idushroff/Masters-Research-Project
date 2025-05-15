@@ -1,16 +1,15 @@
 ---
-title: "UKBB Regression Analysis"
+title: "SA- UKBB RA"
 author: "Uditi Shah"
-date: '2024-08-13'
+date: '2024-11-04'
 output: html_document
 ---
 
-## Regression analysis
+## 6_UKBB_Regression_Analysis_Survival_A\_Models
 
 ## Install relevant packages:
 
 ```{r}
-
 # install.packages("pbapply")
 library(pbapply)
 
@@ -30,29 +29,108 @@ library(gridExtra)
 # Load the Datasets
 
 ```{r}
-
 geno_covar <- readRDS("ukb_adni_genotypes_58_snps_v2.RDS")
 # View(geno_covar)
 
 
-print(geno_covar[geno_covar$FID == 1000015, ])
+# print(geno_covar[geno_covar$FID == 1000015, ])
 
 # column/variable names
-names(geno_covar)
+# names(geno_covar)
 
-print(data[data$ID == 1000015, ])
-
+# print(data[data$ID == 1000015, ])
 ```
 
-# 1 Binary Classification - Demographics - XGBoost Model Predictions
+# 1 Survial A - Demographics - RSF Model Predictions
 
 ```{r}
 
 source('regression.R')
 
-# Test the function
+model_name = 'D_RSF'
 
-model_name='D_xgb'
+# Get survival predictions instead of probabilities
+  # I could probabl use augment()) for this
+  UKBB_subset$event_surv = Surv(UKBB_subset$event_time, 1*(UKBB_subset$conv=="1") )
+  preds_ukbb_time <- predict(fit, new_data = UKBB_subset, type = 'time')
+  print(head(preds_ukbb_time))
+  
+  preds_ukbb_surv <- predict(fit, 
+                        new_data = UKBB_subset,
+                         eval_time = evaluation_time_points, type = 'survival')
+  
+  
+  preds_ukbb_surv$.pred_time <- preds_ukbb_time$.pred_time
+
+  preds_ukbb_surv$surv_obj <- UKBB_subset$event_surv
+  preds_ukbb_surv = .censoring_weights_graf(fit, preds_ukbb_surv)
+ 
+  View(preds_ukbb_surv)
+
+
+
+```
+
+```{r}
+
+# Merge with genotype data while excluding columns that are not needed}
+merged_geno_df <- preds_ukbb_surv %>% 
+    inner_join(geno_covar %>% select(-conv, -AGE, -SEX, -FH, -APOE4), by = c('ID' = 'FID'))
+
+# Use the predictions for survival time to compute summary statistics
+result_D_RSF <- computeSumStats(
+    yp_dat = merged_geno_df %>% pull(.pred_time),  # Assuming .pred_time holds survival times
+    merged_geno_df %>% select(-.pred_time),        # Select predictors excluding survival time
+    is_binary = FALSE                               # Keep is_binary as FALSE for continuous data
+)
+
+# Compute true labels summary statistics
+result_true_labels <- computeSumStats(
+    yp_dat = merged_geno_df %>% pull(conv),       # Conv should be binary (0 or 1)
+    merged_geno_df %>% select(-.pred_time),       # Exclude survival predictions
+    is_binary = TRUE                               # Set is_binary to TRUE for binary labels
+)
+
+print(result_D_RSF)
+
+# Prepare a data frame for plotting
+D_RSF_df <- data.frame(
+    snp_effect_size = -log10(result_true_labels$P),
+    D_RSF = -log10(result_D_RSF$P)
+)
+
+# Calculate the correlation
+correlation_value <- cor(D_RSF_df$snp_effect_size, D_RSF_df$D_RSF, use = "complete.obs") # Use complete cases for correlation
+
+# Create the plot
+D_RSF_plot_v2 <- ggplot(D_RSF_df, aes(x = snp_effect_size, y = D_RSF)) +
+    geom_point(color = 'blue', size = 2) +
+    labs(
+        title = "Regression Analysis Results",
+        x = "SNP Effect Size (Coefficient of Regression Actual Labels)",
+        y = "D_RSF Predictions"
+    ) +
+    theme_minimal() +
+    theme(
+        plot.title = element_text(hjust = 0.5),
+        axis.text = element_text(size = 12),
+        axis.title = element_text(size = 14)
+    ) +
+    annotate("text", x = max(D_RSF_df$snp_effect_size, na.rm = TRUE) * 0.7, 
+             y = max(D_RSF_df$D_RSF, na.rm = TRUE) * 0.9, 
+             label = paste("Correlation: ", round(correlation_value, 3)), 
+             color = "black", size = 5)
+
+# Display the plot
+print(D_RSF_plot_v2)
+
+```
+
+```{r}
+
+source('regression.R')
+
+model_name='D_RSF'
 
 preds_ukbb <- predict(fit_models[[model_name]], new_data = UKBB_subset, type = "prob") %>%
     bind_cols(predict(fit_models[[model_name]], new_data = UKBB_subset)) %>%
@@ -60,7 +138,7 @@ preds_ukbb <- predict(fit_models[[model_name]], new_data = UKBB_subset, type = "
 
 merged_geno_df <- preds_ukbb %>% inner_join(geno_covar %>% select(-conv, -AGE, -SEX, -FH, -APOE4), by=c('ID'='FID'))
 
-result_D_xgb <- computeSumStats( yp_dat=merged_geno_df %>% pull(`.pred_No AD`), 
+result_D_RSF <- computeSumStats( yp_dat=merged_geno_df %>% pull(`.pred_No AD`), 
                            merged_geno_df %>% select(-`.pred_No AD`), 
                            is_binary=F)
 
@@ -72,32 +150,32 @@ result_true_labels <- computeSumStats( yp_dat=merged_geno_df %>% pull(conv),
                            merged_geno_df %>% select(-`.pred_No AD`), 
                           is_binary=T)
 
-print(result_D_xgb)
+print(result_D_RSF)
 
 
 ###################################################################################
-# D_xgb_plot_v1 <- plot(-log10(result_true_labels$P), -log10(result$P))
-# print(D_xgb_plot_v1)
+# D_RSF_plot_v1 <- plot(-log10(result_true_labels$P), -log10(result$P))
+# print(D_RSF_plot_v1)
 
 # Create a data frame from your results
-D_xgb_df <- data.frame(
+D_RSF_df <- data.frame(
   snp_effect_size = -log10(result_true_labels$P),
-  D_xgb = -log10(result_D_xgb$P)
+  D_RSF = -log10(result_D_RSF$P)
 )
 
 # Calculate the correlation
-correlation_value <- cor(D_xgb_df$snp_effect_size, D_xgb_df$D_xgb)
+correlation_value <- cor(D_RSF_df$snp_effect_size, D_RSF_df$D_RSF)
 
 # Print the correlation value
 # print(paste("Correlation: ", round(correlation_value, 3)))
 
 # Create the plot with an identity line and correlation annotation
-D_xgb_plot_v2 <- ggplot(D_xgb_df, aes(x = snp_effect_size, y = D_xgb)) +
+D_RSF_plot_v2 <- ggplot(D_RSF_df, aes(x = snp_effect_size, y = D_RSF)) +
   geom_point(color = 'blue', size = 2) + # Add points
   labs(
     title = "Regression Analysis Results",
     x = "SNP Effect Size (Coefficient of Regression Actual Labels)",
-    y = "D_xgb Predictions"
+    y = "D_RSF Predictions"
   ) +
   theme_minimal() +
   theme(
@@ -105,39 +183,39 @@ D_xgb_plot_v2 <- ggplot(D_xgb_df, aes(x = snp_effect_size, y = D_xgb)) +
     axis.text = element_text(size = 12),
     axis.title = element_text(size = 14)
   ) +
-  annotate("text", x = max(D_xgb_df$snp_effect_size) * 0.7, 
-           y = max(D_xgb_df$D_xgb) * 0.9, 
+  annotate("text", x = max(D_RSF_df$snp_effect_size) * 0.7, 
+           y = max(D_RSF_df$D_RSF) * 0.9, 
            label = paste("Correlation: ", round(correlation_value, 3)), 
            color = "black", size = 5)
 
 # Display the plot
-print(D_xgb_plot_v2)
+print(D_RSF_plot_v2)
 
 
 ###################################################################################
 # Identify indices where P-values are above the threshold, then plot without them
 I <- which(result_true_labels$P < 0.0000001)
 
-# D_xgb_plot2_v1 <- plot(-log10(result_true_labels$P[-I]), -log10(result$P[-I]))
-# print(D_xgb_plot2_v1)
+# D_RSF_plot2_v1 <- plot(-log10(result_true_labels$P[-I]), -log10(result$P[-I]))
+# print(D_RSF_plot2_v1)
 
 # Create a data frame for plotting with filtered values
-D_xgb_df2 <- data.frame(
+D_RSF_df2 <- data.frame(
   snp_effect_size_filtered = -log10(result_true_labels$P[-I]),
-  D_xgb_filtered = -log10(result_D_xgb$P[-I])
+  D_RSF_filtered = -log10(result_D_RSF$P[-I])
 )
 
 # Calculate the correlation
-correlation_value <- cor(D_xgb_df2$snp_effect_size_filtered, D_xgb_df2$D_xgb_filtered)
+correlation_value <- cor(D_RSF_df2$snp_effect_size_filtered, D_RSF_df2$D_RSF_filtered)
 
 
 # Create the plot with appropriate labels and styles
-D_xgb_plot2_v2 <- ggplot(D_xgb_df2, aes(x = snp_effect_size_filtered, y = D_xgb_filtered)) +
+D_RSF_plot2_v2 <- ggplot(D_RSF_df2, aes(x = snp_effect_size_filtered, y = D_RSF_filtered)) +
   geom_point(color = 'red', size = 2) + # Add points
   labs(
     title = "Filtered Regression Analysis Results",
     x = "SNP Effect Size (Filtered)",
-    y = "D_xgb Predictions (Filtered)"
+    y = "D_RSF Predictions (Filtered)"
   ) +
   theme_minimal() +
   theme(
@@ -145,23 +223,22 @@ D_xgb_plot2_v2 <- ggplot(D_xgb_df2, aes(x = snp_effect_size_filtered, y = D_xgb_
     axis.text = element_text(size = 12),
     axis.title = element_text(size = 14)
   ) +
-  annotate("text", x = max(D_xgb_df2$snp_effect_size_filtered) * 0.7, 
-           y = max(D_xgb_df2$D_xgb_filtered) * 0.9, 
+  annotate("text", x = max(D_RSF_df2$snp_effect_size_filtered) * 0.7, 
+           y = max(D_RSF_df2$D_RSF_filtered) * 0.9, 
            label = paste("Correlation: ", round(correlation_value, 3)), 
            color = "black", size = 5)
 # Display the plot
-print(D_xgb_plot2_v2)
+print(D_RSF_plot2_v2)
 ```
 
-# 2 Binary Classification - Family History - Logistic Regression Model
+# 2 Survival A. - Family History - RSF Model
 
 ```{r}
 
 source('regression.R')
 
-# Test the function
 
-model_name='Fh_glm'
+model_name='Fh_RSF'
 
 preds_ukbb <- predict(fit_models[[model_name]], new_data = UKBB_subset, type = "prob") %>%
     bind_cols(predict(fit_models[[model_name]], new_data = UKBB_subset)) %>%
@@ -169,7 +246,7 @@ preds_ukbb <- predict(fit_models[[model_name]], new_data = UKBB_subset, type = "
 
 merged_geno_df <- preds_ukbb %>% inner_join(geno_covar %>% select(-conv, -AGE, -SEX, -FH, -APOE4), by=c('ID'='FID'))
 
-result_Fh_glm <- computeSumStats( yp_dat=merged_geno_df %>% pull(`.pred_No AD`), 
+result_Fh_RSF <- computeSumStats( yp_dat=merged_geno_df %>% pull(`.pred_No AD`), 
                            merged_geno_df %>% select(-`.pred_No AD`), 
                            is_binary=F)
 
@@ -181,32 +258,32 @@ result_true_labels <- computeSumStats( yp_dat=merged_geno_df %>% pull(conv),
                            merged_geno_df %>% select(-`.pred_No AD`), 
                           is_binary=T)
 
-print(result_Fh_glm)
+print(result_Fh_RSF)
 
 
 ###################################################################################
-# Fh_glm_plot_v1 <- plot(-log10(result_true_labels$P), -log10(result$P))
-# print(Fh_glm_plot_v1)
+# Fh_RSF_plot_v1 <- plot(-log10(result_true_labels$P), -log10(result$P))
+# print(Fh_RSF_plot_v1)
 
 # Create a data frame from your results
-Fh_glm_df <- data.frame(
+Fh_RSF_df <- data.frame(
   snp_effect_size = -log10(result_true_labels$P),
-  Fh_glm = -log10(result_Fh_glm$P)
+  Fh_RSF = -log10(result_Fh_RSF$P)
 )
 
 # Calculate the correlation
-correlation_value <- cor(Fh_glm_df$snp_effect_size, Fh_glm_df$Fh_glm)
+correlation_value <- cor(Fh_RSF_df$snp_effect_size, Fh_RSF_df$Fh_RSF)
 
 # Print the correlation value
 # print(paste("Correlation: ", round(correlation_value, 3)))
 
 # Create the plot with an identity line and correlation annotation
-Fh_glm_plot_v2 <- ggplot(Fh_glm_df, aes(x = snp_effect_size, y = Fh_glm)) +
+Fh_RSF_plot_v2 <- ggplot(Fh_RSF_df, aes(x = snp_effect_size, y = Fh_RSF)) +
   geom_point(color = 'blue', size = 2) + # Add points
   labs(
     title = "Regression Analysis Results",
     x = "SNP Effect Size (Coefficient of Regression Actual Labels)",
-    y = "Fh_glm Predictions"
+    y = "Fh_RSF Predictions"
   ) +
   theme_minimal() +
   theme(
@@ -214,39 +291,39 @@ Fh_glm_plot_v2 <- ggplot(Fh_glm_df, aes(x = snp_effect_size, y = Fh_glm)) +
     axis.text = element_text(size = 12),
     axis.title = element_text(size = 14)
   ) +
-  annotate("text", x = max(Fh_glm_df$snp_effect_size) * 0.7, 
-           y = max(Fh_glm_df$Fh_glm) * 0.9, 
+  annotate("text", x = max(Fh_RSF_df$snp_effect_size) * 0.7, 
+           y = max(Fh_RSF_df$Fh_RSF) * 0.9, 
            label = paste("Correlation: ", round(correlation_value, 3)), 
            color = "black", size = 5)
 
 # Display the plot
-print(Fh_glm_plot_v2)
+print(Fh_RSF_plot_v2)
 
 
 ###################################################################################
 # Identify indices where P-values are above the threshold, then plot without them
 I <- which(result_true_labels$P < 0.0000001)
 
-# Fh_glm_plot2_v1 <- plot(-log10(result_true_labels$P[-I]), -log10(result$P[-I]))
-# print(Fh_glm_plot2_v1)
+# Fh_RSF_plot2_v1 <- plot(-log10(result_true_labels$P[-I]), -log10(result$P[-I]))
+# print(Fh_RSF_plot2_v1)
 
 # Create a data frame for plotting with filtered values
-Fh_glm_df2 <- data.frame(
+Fh_RSF_df2 <- data.frame(
   snp_effect_size_filtered = -log10(result_true_labels$P[-I]),
-  Fh_glm_filtered = -log10(result_Fh_glm$P[-I])
+  Fh_RSF_filtered = -log10(result_Fh_RSF$P[-I])
 )
 
 # Calculate the correlation
-correlation_value <- cor(Fh_glm_df2$snp_effect_size_filtered, Fh_glm_df2$Fh_glm_filtered)
+correlation_value <- cor(Fh_RSF_df2$snp_effect_size_filtered, Fh_RSF_df2$Fh_RSF_filtered)
 
 
 # Create the plot with appropriate labels and styles
-Fh_glm_plot2_v2 <- ggplot(Fh_glm_df2, aes(x = snp_effect_size_filtered, y = Fh_glm_filtered)) +
+Fh_RSF_plot2_v2 <- ggplot(Fh_RSF_df2, aes(x = snp_effect_size_filtered, y = Fh_RSF_filtered)) +
   geom_point(color = 'red', size = 2) + # Add points
   labs(
     title = "Filtered Regression Analysis Results",
     x = "SNP Effect Size (Filtered)",
-    y = "Fh_glm Predictions (Filtered)"
+    y = "Fh_RSF Predictions (Filtered)"
   ) +
   theme_minimal() +
   theme(
@@ -254,25 +331,23 @@ Fh_glm_plot2_v2 <- ggplot(Fh_glm_df2, aes(x = snp_effect_size_filtered, y = Fh_g
     axis.text = element_text(size = 12),
     axis.title = element_text(size = 14)
   ) +
-  annotate("text", x = max(Fh_glm_df2$snp_effect_size_filtered) * 0.7, 
-           y = max(Fh_glm_df2$Fh_glm_filtered) * 0.9, 
+  annotate("text", x = max(Fh_RSF_df2$snp_effect_size_filtered) * 0.7, 
+           y = max(Fh_RSF_df2$Fh_RSF_filtered) * 0.9, 
            label = paste("Correlation: ", round(correlation_value, 3)), 
            color = "black", size = 5)
 # Display the plot
-print(Fh_glm_plot2_v2)
-
+print(Fh_RSF_plot2_v2)
 
 ```
 
-# 3 Binary Classification - Demographics + Family History - XGBoost Model
+# 3. Survival A. - Demographics + Family History - RSF Model
 
 ```{r}
 
 source('regression.R')
 
-# Test the function
 
-model_name='DFh_xgb'
+model_name='DFh_RSF'
 
 preds_ukbb <- predict(fit_models[[model_name]], new_data = UKBB_subset, type = "prob") %>%
     bind_cols(predict(fit_models[[model_name]], new_data = UKBB_subset)) %>%
@@ -280,7 +355,7 @@ preds_ukbb <- predict(fit_models[[model_name]], new_data = UKBB_subset, type = "
 
 merged_geno_df <- preds_ukbb %>% inner_join(geno_covar %>% select(-conv, -AGE, -SEX, -FH, -APOE4), by=c('ID'='FID'))
 
-result_DFh_xgb <- computeSumStats( yp_dat=merged_geno_df %>% pull(`.pred_No AD`), 
+result_DFh_RSF <- computeSumStats( yp_dat=merged_geno_df %>% pull(`.pred_No AD`), 
                            merged_geno_df %>% select(-`.pred_No AD`), 
                            is_binary=F)
 
@@ -288,25 +363,25 @@ result_true_labels <- computeSumStats( yp_dat=merged_geno_df %>% pull(conv),
                            merged_geno_df %>% select(-`.pred_No AD`), 
                           is_binary=T)
 
-print(result_DFh_xgb)
+print(result_DFh_RSF)
 
 
 ###################################################################################
-DFh_xgb_df <- data.frame(
+DFh_RSF_df <- data.frame(
   snp_effect_size = -log10(result_true_labels$P),
-  DFh_xgb = -log10(result_DFh_xgb$P)
+  DFh_RSF = -log10(result_DFh_RSF$P)
 )
 
 # Calculate the correlation
-correlation_value <- cor(DFh_xgb_df$snp_effect_size, DFh_xgb_df$DFh_xgb)
+correlation_value <- cor(DFh_RSF_df$snp_effect_size, DFh_RSF_df$DFh_RSF)
 
 # Create the plot with an identity line and correlation annotation
-DFh_xgb_plot_v2 <- ggplot(DFh_xgb_df, aes(x = snp_effect_size, y = DFh_xgb)) +
+DFh_RSF_plot_v2 <- ggplot(DFh_RSF_df, aes(x = snp_effect_size, y = DFh_RSF)) +
   geom_point(color = 'blue', size = 2) + # Add points
   labs(
     title = "Regression Analysis Results",
     x = "SNP Effect Size (Coefficient of Regression Actual Labels)",
-    y = "DFh_xgb Predictions"
+    y = "DFh_RSF Predictions"
   ) +
   theme_minimal() +
   theme(
@@ -314,32 +389,32 @@ DFh_xgb_plot_v2 <- ggplot(DFh_xgb_df, aes(x = snp_effect_size, y = DFh_xgb)) +
     axis.text = element_text(size = 12),
     axis.title = element_text(size = 14)
   ) +
-  annotate("text", x = max(DFh_xgb_df$snp_effect_size) * 0.7, 
-           y = max(DFh_xgb_df$DFh_xgb) * 0.9, 
+  annotate("text", x = max(DFh_RSF_df$snp_effect_size) * 0.7, 
+           y = max(DFh_RSF_df$DFh_RSF) * 0.9, 
            label = paste("Correlation: ", round(correlation_value, 3)), 
            color = "black", size = 5)
 
 # Display the plot
-print(DFh_xgb_plot_v2)
+print(DFh_RSF_plot_v2)
 
 
 ###################################################################################
 I <- which(result_true_labels$P < 0.0000001)
 
-DFh_xgb_df2 <- data.frame(
+DFh_RSF_df2 <- data.frame(
   snp_effect_size_filtered = -log10(result_true_labels$P[-I]),
-  DFh_xgb_filtered = -log10(result_DFh_xgb$P[-I])
+  DFh_RSF_filtered = -log10(result_DFh_RSF$P[-I])
 )
 
 # Calculate the correlation
-correlation_value <- cor(DFh_xgb_df2$snp_effect_size_filtered, DFh_xgb_df2$DFh_xgb_filtered)
+correlation_value <- cor(DFh_RSF_df2$snp_effect_size_filtered, DFh_RSF_df2$DFh_RSF_filtered)
 
-DFh_xgb_plot2_v2 <- ggplot(DFh_xgb_df2, aes(x = snp_effect_size_filtered, y = DFh_xgb_filtered)) +
+DFh_RSF_plot2_v2 <- ggplot(DFh_RSF_df2, aes(x = snp_effect_size_filtered, y = DFh_RSF_filtered)) +
   geom_point(color = 'red', size = 2) + # Add points
   labs(
     title = "Filtered Regression Analysis Results",
     x = "SNP Effect Size (Filtered)",
-    y = "DFh_xgb Predictions (Filtered)"
+    y = "DFh_RSF Predictions (Filtered)"
   ) +
   theme_minimal() +
   theme(
@@ -347,24 +422,25 @@ DFh_xgb_plot2_v2 <- ggplot(DFh_xgb_df2, aes(x = snp_effect_size_filtered, y = DF
     axis.text = element_text(size = 12),
     axis.title = element_text(size = 14)
   ) +
-  annotate("text", x = max(DFh_xgb_df2$snp_effect_size_filtered) * 0.7, 
-           y = max(DFh_xgb_df2$DFh_xgb_filtered) * 0.9, 
+  annotate("text", x = max(DFh_RSF_df2$snp_effect_size_filtered) * 0.7, 
+           y = max(DFh_RSF_df2$DFh_RSF_filtered) * 0.9, 
            label = paste("Correlation: ", round(correlation_value, 3)), 
            color = "black", size = 5)
 # Display the plot
-print(DFh_xgb_plot2_v2)
+print(DFh_RSF_plot2_v2)
 
 ```
 
-# 4 Binary Classification - DGFh - Logistic Regression Model
+# 4. Survival A. - DGFh - WR Model
 
 ```{r}
 
+
 source('regression.R')
 
-# Test the function
 
-model_name='DGFh_glm'
+  
+model_name='DGFh_WR'
 
 preds_ukbb <- predict(fit_models[[model_name]], new_data = UKBB_subset, type = "prob") %>%
     bind_cols(predict(fit_models[[model_name]], new_data = UKBB_subset)) %>%
@@ -372,33 +448,33 @@ preds_ukbb <- predict(fit_models[[model_name]], new_data = UKBB_subset, type = "
 
 merged_geno_df <- preds_ukbb %>% inner_join(geno_covar %>% select(-conv, -AGE, -SEX, -FH, -APOE4), by=c('ID'='FID'))
 
-result_DGFh_glm <- computeSumStats( yp_dat=merged_geno_df %>% pull(`.pred_No AD`), 
+result_DGFh_RSF <- computeSumStats( yp_dat=merged_geno_df %>% pull(`.pred_No AD`), 
                            merged_geno_df %>% select(-`.pred_No AD`), 
-                           is_binary=F)
+                           is_Survival=F)
 
 result_true_labels <- computeSumStats( yp_dat=merged_geno_df %>% pull(conv), 
                            merged_geno_df %>% select(-`.pred_No AD`), 
                           is_binary=T)
 
-print(result_DGFh_glm)
+print(result_DGFh_RSF)
 
 
 ###################################################################################
-DGFh_glm_df <- data.frame(
+DGFh_WR_df <- data.frame(
   snp_effect_size = -log10(result_true_labels$P),
-  DGFh_glm = -log10(result_DGFh_glm$P)
+  DGFh_WR = -log10(result_DGFh_WR$P)
 )
 
 # Calculate the correlation
-correlation_value <- cor(DGFh_glm_df$snp_effect_size, DGFh_glm_df$DGFh_glm)
+correlation_value <- cor(DGFh_WR_df$snp_effect_size, DGFh_WR_df$DGFh_WR)
 
 # Create the plot with an identity line and correlation annotation
-DGFh_glm_plot_v2 <- ggplot(DGFh_glm_df, aes(x = snp_effect_size, y = DGFh_glm)) +
+DGFh_WR_plot_v2 <- ggplot(DGFh_WR_df, aes(x = snp_effect_size, y = DGFh_WR)) +
   geom_point(color = 'blue', size = 2) + # Add points
   labs(
     title = "Regression Analysis Results",
     x = "SNP Effect Size (Coefficient of Regression Actual Labels)",
-    y = "DGFh_glm Predictions"
+    y = "DGFh_WR Predictions"
   ) +
   theme_minimal() +
   theme(
@@ -406,37 +482,37 @@ DGFh_glm_plot_v2 <- ggplot(DGFh_glm_df, aes(x = snp_effect_size, y = DGFh_glm)) 
     axis.text = element_text(size = 12),
     axis.title = element_text(size = 14)
   ) +
-  annotate("text", x = max(DGFh_glm_df$snp_effect_size) * 0.7, 
-           y = max(DGFh_glm_df$DGFh_glm) * 0.9, 
+  annotate("text", x = max(DGFh_WR_df$snp_effect_size) * 0.7, 
+           y = max(DGFh_WR_df$DGFh_WR) * 0.9, 
            label = paste("Correlation: ", round(correlation_value, 3)), 
            color = "black", size = 5)
 
 # Display the plot
-print(DGFh_glm_plot_v2)
+print(DGFh_WR_plot_v2)
 
 # I'm getting the Nan for the Cor in this plot because there are some P=0 values  causing inf when u take -log and that's why. so get rid of that and use the plot below
-any(is.na(result_true_labels$P)) || any(is.na(result_DGFh_glm$P))
+any(is.na(result_true_labels$P)) || any(is.na(result_DGFh_WR$P))
 # [1] FALSE
-any(is.infinite(-log10(result_true_labels$P))) || any(is.infinite(-log10(result_DGFh_glm$P)))
+any(is.infinite(-log10(result_true_labels$P))) || any(is.infinite(-log10(result_DGFh_WR$P)))
 # [1] TRUE
 
 ###################################################################################
 I <- which(result_true_labels$P < 0.0000001)
 
-DGFh_glm_df2 <- data.frame(
+DGFh_WR_df2 <- data.frame(
   snp_effect_size_filtered = -log10(result_true_labels$P[-I]),
-  DGFh_glm_filtered = -log10(result_DGFh_glm$P[-I])
+  DGFh_WR_filtered = -log10(result_DGFh_WR$P[-I])
 )
 
 # Calculate the correlation
-correlation_value <- cor(DGFh_glm_df2$snp_effect_size_filtered, DGFh_glm_df2$DGFh_glm_filtered)
+correlation_value <- cor(DGFh_WR_df2$snp_effect_size_filtered, DGFh_WR_df2$DGFh_WR_filtered)
 
-DGFh_glm_plot2_v2 <- ggplot(DGFh_glm_df2, aes(x = snp_effect_size_filtered, y = DGFh_glm_filtered)) +
+DGFh_WR_plot2_v2 <- ggplot(DGFh_WR_df2, aes(x = snp_effect_size_filtered, y = DGFh_WR_filtered)) +
   geom_point(color = 'red', size = 2) + # Add points
   labs(
     title = "Filtered Regression Analysis Results",
     x = "SNP Effect Size (Filtered)",
-    y = "DGFh_glm Predictions (Filtered)"
+    y = "DGFh_WR Predictions (Filtered)"
   ) +
   theme_minimal() +
   theme(
@@ -444,33 +520,33 @@ DGFh_glm_plot2_v2 <- ggplot(DGFh_glm_df2, aes(x = snp_effect_size_filtered, y = 
     axis.text = element_text(size = 12),
     axis.title = element_text(size = 14)
   ) +
-  annotate("text", x = max(DGFh_glm_df2$snp_effect_size_filtered) * 0.7, 
-           y = max(DGFh_glm_df2$DGFh_glm_filtered) * 0.9, 
+  annotate("text", x = max(DGFh_WR_df2$snp_effect_size_filtered) * 0.7, 
+           y = max(DGFh_WR_df2$DGFh_WR_filtered) * 0.9, 
            label = paste("Correlation: ", round(correlation_value, 3)), 
            color = "black", size = 5)
 
 # Display the plot
-print(DGFh_glm_plot2_v2)
+print(DGFh_WR_plot2_v2)
 
 
 ##############################################################
-
 ```
 
 # Plot all the plots side by Side
 
 ```{r}
 
-RA_BC_plot1 <- grid.arrange(D_xgb_plot_v2, Fh_glm_plot_v2, DFh_xgb_plot_v2, DGFh_glm_plot_v2, ncol = 2, nrow = 2)
+
+RA_SA_plot1 <- grid.arrange(D_RSF_plot_v2, Fh_RSF_plot_v2, DFh_RSF_plot_v2, DGFh_WR_plot_v2, ncol = 2, nrow = 2)
 
 # Save the updated plot
-ggsave("RA_BC_plot1.png", plot = RA_BC_plot1, width = 10, height = 10)
-```
+ggsave("RA_SA_plot1.png", plot = RA_SA_plot1, width = 10, height = 10)
 
-```{r}
 
-RA_BC_plot2 <- grid.arrange(D_xgb_plot2_v2, Fh_glm_plot2_v2, DFh_xgb_plot2_v2, DGFh_glm_plot2_v2, ncol = 2, nrow = 2)
+
+
+RA_SA_plot2 <- grid.arrange(D_RSF_plot2_v2, Fh_RSF_plot2_v2, DFh_RSF_plot2_v2, DGFh_WR_plot2_v2, ncol = 2, nrow = 2)
 
 # Save the updated plot
-ggsave("RA_BC_plot2.png", plot = RA_BC_plot2, width = 10, height = 10)
+ggsave("RA_SA_plot2.png", plot = RA_SA_plot2, width = 10, height = 10)
 ```

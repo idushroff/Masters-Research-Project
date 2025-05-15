@@ -1,0 +1,582 @@
+---
+
+---
+title: "ADNI, AIBL, UK biobank Data - Descriptive Analysis"
+author: "Uditi Shah"
+date: '2024-08-13'
+output: html_document
+---
+
+# 2_Descriptive_Analysis_of_ADNI+AIBL+UKBB_Datasets
+
+```{r}
+
+# Install and load the tidyverse package, which is a collection of packages for data manipulation and visualization.
+# install.packages("tidyverse")
+library(tidyverse)
+
+# readr: For reading CSV files
+# dplyr: For data manipulation
+# ggplot2:For plots and graphs
+# tidyr: For tidying and reshaping data into a tidy format.
+# purrr: For functional programming and working with lists and vectors.
+# tibble: For creating and working with modern data frames.
+# stringr: For string manipulation and text processing.
+# forcats: For working with categorical data and factors.
+# lubridate: For working with dates and times.
+# magrittr: For creating expressive pipelines using the pipe operator %>%.
+# rlang: For advanced manipulation and programming with R expressions.
+
+
+# Install the 'tableone' package for quickly understanding the distribution of variables as it allows for generating summary tables and statistics (means, medians, counts, and percentages) for comparing characteristics between different treatment/demographic groups or other categorical variables in a dataset. 
+# install.packages("remotes")
+# remotes::install_github("kaz-yos/tableone")
+library(tableone)
+```
+
+```{r}
+
+# Use read.csv() to load a CSV file
+data <- read.csv("df_comb_ml.csv")
+#View(data)
+```
+
+```{r}
+
+# Display the first 5 lines
+head(data, 5)
+```
+
+```{r}
+# dimensions
+dim(data)
+# 57066 rows and 15 columns
+```
+
+```{r}
+# all the possible unique values that exist for each column/variable
+length(unique(data$ID))
+# this means that there are 57066 individuals in our data set
+
+# filter is for rows
+# select is for columns
+# this can show us if there are NA = missing data, none = or unknown = which mean diff things
+# table (ColumnName)
+```
+
+```{r}
+# column/variable names
+names(data)
+
+# Attached is a set of data from ADNI, AIBL and UK Biobank
+# ID    - Sample.id
+# AGE    - Age in years
+# SEX - is female (?)
+# EDU   - years of education, bit different across cohorts
+# FH  - Parental history of AD
+# APOE4  - # of copies of APOE4 (0,1,2)
+# DX - Diagnosis (baseline?)
+# dataset - AIBL/ADNI/UKB
+# conv - Do they Convert to AD or not
+# AGE.bl - What is their age at baseline
+# event_time - When do they convert to AD or leave the study
+# APOE4_e4e4 - Do they have 2 copies of APOE4?
+# FH_na - Is their family history missing?
+# conv_fh - Do they have a history of AD or not (FH!=0)
+```
+
+```{r}
+
+
+# Install and load the naniar package, which provides functions for exploring missing data patterns.
+# install.packages("naniar")
+library(naniar)
+
+# #View all the rows with dataset = ADNI 
+ADNI <- data[data$dataset == "ADNI", ]
+length(unique(AIBL$ID))
+length(unique(UKBB$ID))
+# #View(ADNI)
+
+gg_miss_var(ADNI) + ggtitle("Missing Values in Each Column of ADNI Dataset")
+vis_miss(ADNI) + labs(title = "Heatmap of Missing Values in ADNI Dataset")
+
+# #View all the rows with dataset = ABIL 
+AIBL <- data[data$dataset == "AIBL", ]
+sum(is.na(AIBL$EDU))
+
+AIBL <- AIBL[!is.na(AIBL$EDU), ]
+sum(is.na(AIBL$EDU))
+# #View(AIBL)
+
+gg_miss_var(AIBL) + ggtitle("Missing Values in Each Column of AIBL Dataset")
+vis_miss(AIBL) + labs(title = "Heatmap of Missing Values in AIBL Dataset")
+
+# #View all the rows with dataset = UKBiobank 
+UKBB <- data[data$dataset == "UKB", ]
+# Check for any rows where EDU is NA
+sum(is.na(UKBB$EDU))
+UKBB <- UKBB[!is.na(UKBB$EDU), ]
+sum(is.na(UKBB$EDU))
+
+
+names(UKBB)[names(UKBB) == "AGE"] <- "AGE.followup"
+
+names(UKBB)[names(UKBB) == "AGE.bl"] <- "AGE"
+
+
+
+#View(UKBB)
+
+# #View all the rows with conv = 0
+nonconvertors <- data[data$conv == 0, ]
+# #View(nonconvertors)
+
+gg_miss_var(nonconvertors) + ggtitle("Missing Values in Each Column of nonconvertors Dataset")
+vis_miss(nonconvertors) + labs(title = "Heatmap of Missing Values in nonconvertors Dataset")
+
+# #View all the rows with conv = 1
+convertors <- data[data$conv == 1, ]
+# #View(convertors)
+
+gg_miss_var(convertors) + ggtitle("Missing Values in Each Column of convertors Dataset")
+vis_miss(convertors) + labs(title = "Heatmap of Missing Values in convertors Dataset")
+
+# prune the datasets to only have the columns we want in our table01
+UKBB <- UKBB %>% select(-FH_na, -conv_fh, -APOE4_e4e4)
+AIBL <- AIBL %>% select(-FH_na, -conv_fh, -APOE4_e4e4)
+ADNI <- ADNI %>% select(-FH_na, -conv_fh, -APOE4_e4e4)
+#View(UKBB)
+```
+
+# Save preprocessed data to a CSV file
+
+```{r}
+
+write.csv(ADNI, "ADNI_subset.csv", row.names=FALSE)
+write.csv(AIBL, "AIBL_subset.csv", row.names=FALSE)
+write.csv(UKBB, "UKBB_subset.csv", row.names=FALSE)
+```
+
+### Table 01 for UKBB
+
+\# prune the datasets to only have the columns we want in our table01
+
+```{r}
+
+
+count_tablev7 <- ADNI %>%
+  group_by(conv) %>%
+  summarise(Count = n())
+# #View(count_tablev7)
+sum(count_tablev7$Count)
+
+count_tablev8 <- UKBB %>%
+  group_by(conv) %>%
+  summarise(Count = n())
+# #View(count_tablev8)
+sum(count_tablev8$Count)
+
+count_tablev9 <- AIBL %>%
+  group_by(conv) %>%
+  summarise(Count = n())
+# #View(count_tablev9)
+sum(count_tablev9$Count)
+
+
+## TABLE 01
+# Create a variable list which we want in Table 1
+listVars <- c("AGE.bl", "EDU", "SEX", "APOE4", "FH")
+ 
+# Define categorical variables
+# catVars <- c("DX","PTGENDER")
+catVars <- c("SEX")
+
+table1_UKBB <- CreateTableOne(vars = listVars, data = UKBB, factorVars = catVars, strata = c("conv"))
+print(table1_UKBB)
+
+```
+
+### Table 01 for ABIL
+
+```{r}
+
+## TABLE 01
+# Create a variable list which we want in Table 1
+listVars <- c("AGE.bl", "EDU", "SEX", "APOE4", "FH")
+ 
+# Define categorical variables
+# catVars <- c("DX","PTGENDER")
+catVars <- c("SEX")
+
+table1_AIBL <- CreateTableOne(vars = listVars, data = AIBL, factorVars = catVars, strata = c("conv"))
+print(table1_AIBL)
+```
+
+### Table 01 for ADNI
+
+```{r}
+
+## TABLE 01
+surv_df <- read.csv("preprocessed_data.csv")
+# #View(surv_df)
+
+# Create a variable list which we want in Table 1
+listVars <- c("AGE", "EDU", "SEX", "APOE4", "FH", "MMSE", "mPACCtrailsB")
+ 
+# Define categorical variables
+# catVars <- c("DX","PTGENDER")
+catVars <- c("SEX")
+
+table01_ADNI <- CreateTableOne(vars = listVars, data = surv_df, factorVars = catVars, strata = c("event"))
+print(table01_ADNI)
+
+#####################################################
+# Create a variable list which we want in Table 1
+listVars <- c("AGE.bl", "EDU", "SEX", "APOE4", "FH")
+ 
+# Define categorical variables
+# catVars <- c("DX","PTGENDER")
+catVars <- c("SEX")
+
+table1_ADNI_subset <- CreateTableOne(vars = listVars, data = ADNI, factorVars = catVars, strata = c("conv"))
+print(table1_ADNI_subset)
+```
+
+## Regression analysis using the SNP FILE
+
+1.  Install relevant packages:
+
+```{r}
+
+install.packages("pbapply")
+library(pbapply)
+
+install.packages("ggplot2")
+library(ggplot2)
+
+install.packages("GGally")
+library(GGally)
+```
+
+2.  Load the Dataset
+
+```{r}
+geno_covar <- readRDS("ukb_adni_genotypes_58_snps_v2.RDS")
+# #View(geno_covar)
+
+
+print(geno_covar[geno_covar$FID == 1000015, ])
+
+# column/variable names
+names(geno_covar)
+
+print(data[data$ID == 1000015, ])
+
+```
+
+# Boxplots for 3.1
+
+```{r}
+
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+library(patchwork) # For combining plots
+
+# Import pre-processed datasets
+AIBL_subset <- read.csv("AIBL_subset.csv")
+#View(AIBL_subset)
+UKBB_subset <- read.csv("UKBB_subset.csv")
+#View(UKBB_subset)
+surv_df <- read.csv("preprocessed_data.csv")
+#View(surv_df)
+
+
+# Convert PTGENDER to numeric (0 for Male, 1 for Female)
+surv_df$SEX <- ifelse(surv_df$SEX == "Male", 0, ifelse(surv_df$SEX == "Female", 1, NA))
+AIBL_subset$SEX <- as.numeric(AIBL_subset$SEX)
+UKBB_subset$SEX <- as.numeric(UKBB_subset$SEX)
+# Ensure conv column is present and aligned across datasets
+surv_df$conv <- surv_df$event  # Adjust if conv is named differently in ADNI data
+surv_df$X <- surv_df$RID  # Adjust if conv is named differently in ADNI data
+
+
+# Add a 'dataset' column to each dataset
+surv_df$dataset <- "ADNI"
+UKBB_subset$dataset <- "UKBB"
+AIBL_subset$dataset <- "AIBL"
+
+
+# Combine the datasets
+combined_data <- rbind(
+  surv_df[, c("X", "AGE", "EDU", "SEX", "APOE4", "FH", "conv", "dataset")],
+  UKBB_subset[, c("X", "AGE", "EDU", "SEX", "APOE4", "FH", "conv", "dataset")],
+  AIBL_subset[, c("X", "AGE", "EDU", "SEX", "APOE4", "FH", "conv", "dataset")]
+)
+
+#View(combined_data)
+
+# Convert columns to factors where appropriate
+combined_data <- combined_data %>%
+  mutate(
+    SEX = factor(SEX, labels = c("Male", "Female")),
+    conv = factor(conv, labels = c("Non-Converter", "Converter")),
+    dataset = factor(dataset),
+    APOE4 = factor(APOE4),
+    FH = factor(FH)
+  )
+
+# Recalculate proportions for the bar plots to be comparable across all datasets
+prop_data_comparable <- combined_data %>%
+  group_by(SEX, APOE4, FH, conv) %>%
+  count(dataset) %>%
+  group_by(SEX, APOE4, FH) %>%
+  mutate(prop = n / sum(n)) %>%
+  ungroup()
+
+# Define colors consistently for each dataset
+dataset_colors <- c("ADNI" = "skyblue", "AIBL" = "salmon", "UKBB" = "lightgreen")
+
+# Plot for SEX with proportions across all datasets
+plot_sex <- ggplot(prop_data_comparable, aes(x = conv, y = prop, fill = dataset)) +
+  geom_bar(stat = "identity", position = "dodge", width = 0.7) +
+  facet_wrap(~ SEX, scales = "free_y") +
+  labs(title = "Proportion of Participants by Sex, Dataset, and Conversion Status",
+       x = "Conversion Status", y = "Proportion") +
+  scale_fill_manual(values = dataset_colors) +
+  ylim(0, 1) +  # Set y-axis limit from 0 to 1
+  theme_minimal(base_size = 14) +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1), legend.position = "bottom")
+
+# Plot for APOE4 status with proportions across all datasets
+plot_apoe4 <- ggplot(prop_data_comparable, aes(x = conv, y = prop, fill = dataset)) +
+  geom_bar(stat = "identity", position = "dodge", width = 0.7) +
+  facet_wrap(~ APOE4, scales = "free_y") +
+  labs(title = "Proportion of Participants by APOE4 Status, Dataset, and Conversion Status",
+       x = "Conversion Status", y = "Proportion") +
+  scale_fill_manual(values = dataset_colors) +
+  ylim(0, 1) +  # Set y-axis limit from 0 to 1
+  theme_minimal(base_size = 14) +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1), legend.position = "bottom")
+
+# Plot for Family History (FH) with proportions across all datasets
+plot_fh <- ggplot(prop_data_comparable, aes(x = conv, y = prop, fill = dataset)) +
+  geom_bar(stat = "identity", position = "dodge", width = 0.7) +
+  facet_wrap(~ FH, scales = "free_y") +
+  labs(title = "Proportion of Participants by Family History, Dataset, and Conversion Status",
+       x = "Conversion Status", y = "Proportion") +
+  scale_fill_manual(values = dataset_colors) +
+  ylim(0, 1) +  # Set y-axis limit from 0 to 1
+  theme_minimal(base_size = 14) +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1), legend.position = "bottom")
+
+# Age and Education boxplots with shared legend across all plots
+plot_age <- ggplot(combined_data, aes(x = conv, y = AGE, fill = dataset)) +
+  geom_boxplot(outlier.shape = NA, position = position_dodge(width = 0.75)) +
+  labs(title = "Age by Conversion Status and Dataset", x = "Conversion Status", y = "Age") +
+  scale_fill_manual(values = dataset_colors) +
+  theme_minimal(base_size = 14) +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1), legend.position = "bottom")+
+  guides(fill = "none")
+
+plot_edu <- ggplot(combined_data, aes(x = conv, y = EDU, fill = dataset)) +
+  geom_boxplot(outlier.shape = NA, position = position_dodge(width = 0.75)) +
+  labs(title = "Education by Conversion Status and Dataset", x = "Conversion Status", y = "Education (Years)") +
+  scale_fill_manual(values = dataset_colors) +
+  theme_minimal(base_size = 14) +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1), legend.position = "bottom")+ guides(fill = "none") 
+
+# Combine all plots with shared legend and ensure correct patchwork syntax
+combined_plot <- (plot_age + plot_edu + plot_sex + plot_apoe4 + plot_fh) + 
+                 plot_layout(ncol = 2, guides = "collect") +
+                 theme(legend.position = "bottom")  # Place the legend at the bottom
+
+# Display combined plot with shared legend at the bottom
+combined_plot
+
+# Save the plot
+ggsave("combined_plot_corrected_comparable_proportions.png", plot = combined_plot, width = 20, height = 15)
+
+# Remove legend from all plots by setting legend.position to "none"
+plot_sex <- plot_sex + theme(legend.position = "none")
+plot_apoe4 <- plot_apoe4 + theme(legend.position = "none")
+plot_fh <- plot_fh + theme(legend.position = "none")
+plot_age <- plot_age + theme(legend.position = "none")
+plot_edu <- plot_edu + theme(legend.position = "none")
+
+# Combine all plots without legends
+combined_plot <- (plot_age + plot_edu + plot_sex + plot_apoe4 + plot_fh) + 
+                 plot_layout(ncol = 2)
+
+# Display the combined plot without any legends
+combined_plot
+
+# Save the plot
+ggsave("combined_plot_no_legends.png", plot = combined_plot, width = 15, height = 15)
+
+```
+
+```{r}
+# Modify the plot for SEX with proportional stacked bars
+plot_sex <- ggplot(prop_data_comparable, aes(x = conv, y = prop, fill = dataset)) +
+  geom_bar(stat = "identity", position = "stack", width = 0.7) +  # Stacked bar
+  facet_wrap(~ SEX, scales = "free_y") +
+  labs(x = "Conversion Status", y = "Proportion for Sex") +  # Y-axis reflects the feature name
+  scale_fill_manual(values = dataset_colors) +
+  theme_minimal(base_size = 14) +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1), 
+        legend.position = "bottom", 
+        strip.text = element_blank(),   # Removes facet label (title)
+        plot.title = element_blank())   # Removes overall title
+
+# Modify the plot for APOE4 with proportional stacked bars
+plot_apoe4 <- ggplot(prop_data_comparable, aes(x = conv, y = prop, fill = dataset)) +
+  geom_bar(stat = "identity", position = "stack", width = 0.7) +  # Stacked bar
+  facet_wrap(~ APOE4, scales = "free_y") +
+  labs(x = "Conversion Status", y = "Proportion for APOE4") +  # Y-axis reflects the feature name
+  scale_fill_manual(values = dataset_colors) +
+  theme_minimal(base_size = 14) +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1), 
+        legend.position = "bottom", 
+        strip.text = element_blank(),   # Removes facet label (title)
+        plot.title = element_blank())   # Removes overall title
+
+# Modify the plot for Family History (FH) with proportional stacked bars
+plot_fh <- ggplot(prop_data_comparable, aes(x = conv, y = prop, fill = dataset)) +
+  geom_bar(stat = "identity", position = "stack", width = 0.7) +  # Stacked bar
+  facet_wrap(~ FH, scales = "free_y") +
+  labs(x = "Conversion Status", y = "Proportion for Family History") +  # Y-axis reflects the feature name
+  scale_fill_manual(values = dataset_colors) +
+  theme_minimal(base_size = 14) +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1), 
+        legend.position = "bottom", 
+        strip.text = element_blank(),   # Removes facet label (title)
+        plot.title = element_blank())   # Removes overall title
+
+# Modify the boxplots for Age and Education (no titles, already done)
+plot_age <- ggplot(combined_data, aes(x = conv, y = AGE, fill = dataset)) +
+  geom_boxplot(outlier.shape = NA, position = position_dodge(width = 0.75)) +
+  labs(x = "Conversion Status", y = "Age") +  # No title
+  scale_fill_manual(values = dataset_colors) +
+  theme_minimal(base_size = 14) +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1), 
+        legend.position = "bottom") +
+  guides(fill = "none")
+
+plot_edu <- ggplot(combined_data, aes(x = conv, y = EDU, fill = dataset)) +
+  geom_boxplot(outlier.shape = NA, position = position_dodge(width = 0.75)) +
+  labs(x = "Conversion Status", y = "Education (Years)") +  # No title
+  scale_fill_manual(values = dataset_colors) +
+  theme_minimal(base_size = 14) +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1), 
+        legend.position = "bottom") +
+  guides(fill = "none") 
+
+# Combine all plots with shared legend at the bottom
+combined_plot <- (plot_age + plot_edu + plot_sex + plot_apoe4 + plot_fh) + 
+                 plot_layout(ncol = 2, guides = "collect") +
+                 theme(legend.position = "bottom")  # Place the legend at the bottom
+
+# Display combined plot with shared legend at the bottom
+combined_plot
+
+# Save the plot
+ggsave("combined_plot_corrected_comparable_proportions.png", plot = combined_plot, width = 20, height = 15)
+
+# Remove legend from all plots by setting legend.position to "none"
+plot_sex <- plot_sex + theme(legend.position = "none")
+plot_apoe4 <- plot_apoe4 + theme(legend.position = "none")
+plot_fh <- plot_fh + theme(legend.position = "none")
+plot_age <- plot_age + theme(legend.position = "none")
+plot_edu <- plot_edu + theme(legend.position = "none")
+
+# Combine all plots without legends
+combined_plot <- (plot_age + plot_edu + plot_sex + plot_apoe4 + plot_fh) + 
+                 plot_layout(ncol = 2)
+
+# Display the combined plot without any legends
+combined_plot
+
+# Save the plot
+ggsave("combined_plot_no_legends.png", plot = combined_plot, width = 15, height = 15)
+
+```
+
+```{r}
+# Plot for SEX with proportions across all datasets
+plot_sex <- ggplot(prop_data_comparable, aes(x = conv, y = prop, fill = dataset)) +
+  geom_bar(stat = "identity", position = "dodge", width = 0.7) +
+  facet_wrap(~ SEX, scales = "free_y") +
+  labs(x = "Conversion Status", y = "Proportion by Sex") +  # Updated y-axis label
+  scale_fill_manual(values = dataset_colors) +
+  ylim(0, 1) +  # Set y-axis limit from 0 to 1
+  theme_minimal(base_size = 14) +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1), legend.position = "bottom")
+
+# Plot for APOE4 status with proportions across all datasets
+plot_apoe4 <- ggplot(prop_data_comparable, aes(x = conv, y = prop, fill = dataset)) +
+  geom_bar(stat = "identity", position = "dodge", width = 0.7) +
+  facet_wrap(~ APOE4, scales = "free_y") +
+  labs(x = "Conversion Status", y = "Proportion by APOE4 Status") +  # Updated y-axis label
+  scale_fill_manual(values = dataset_colors) +
+  ylim(0, 1) +  # Set y-axis limit from 0 to 1
+  theme_minimal(base_size = 14) +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1), legend.position = "bottom")
+
+# Plot for Family History (FH) with proportions across all datasets
+plot_fh <- ggplot(prop_data_comparable, aes(x = conv, y = prop, fill = dataset)) +
+  geom_bar(stat = "identity", position = "dodge", width = 0.7) +
+  facet_wrap(~ FH, scales = "free_y") +
+  labs(x = "Conversion Status", y = "Proportion by Family History") +  # Updated y-axis label
+  scale_fill_manual(values = dataset_colors) +
+  ylim(0, 1) +  # Set y-axis limit from 0 to 1
+  theme_minimal(base_size = 14) +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1), legend.position = "bottom")
+
+# Age and Education boxplots with shared legend across all plots
+plot_age <- ggplot(combined_data, aes(x = conv, y = AGE, fill = dataset)) +
+  geom_boxplot(outlier.shape = NA, position = position_dodge(width = 0.75)) +
+  labs(x = "Conversion Status", y = "Age") +  # No title, just axis labels
+  scale_fill_manual(values = dataset_colors) +
+  theme_minimal(base_size = 14) +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1), legend.position = "bottom") +
+  guides(fill = "none")
+
+plot_edu <- ggplot(combined_data, aes(x = conv, y = EDU, fill = dataset)) +
+  geom_boxplot(outlier.shape = NA, position = position_dodge(width = 0.75)) +
+  labs(x = "Conversion Status", y = "Education (Years)") +  # No title, just axis labels
+  scale_fill_manual(values = dataset_colors) +
+  theme_minimal(base_size = 14) +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1), legend.position = "bottom") +
+  guides(fill = "none") 
+
+# Combine all plots with shared legend and ensure correct patchwork syntax
+combined_plot <- (plot_age + plot_edu + plot_sex + plot_apoe4 + plot_fh) + 
+                 plot_layout(ncol = 2, guides = "collect") +
+                 theme(legend.position = "bottom")  # Place the legend at the bottom
+
+# Display combined plot with shared legend at the bottom
+combined_plot
+
+# Save the plot
+ggsave("combined_plot_corrected_comparable_proportions.png", plot = combined_plot, width = 20, height = 15)
+
+# Remove legend from all plots by setting legend.position to "none"
+plot_sex <- plot_sex + theme(legend.position = "none")
+plot_apoe4 <- plot_apoe4 + theme(legend.position = "none")
+plot_fh <- plot_fh + theme(legend.position = "none")
+plot_age <- plot_age + theme(legend.position = "none")
+plot_edu <- plot_edu + theme(legend.position = "none")
+
+# Combine all plots without legends
+combined_plot <- (plot_age + plot_edu + plot_sex + plot_apoe4 + plot_fh) + 
+                 plot_layout(ncol = 2)
+
+# Display the combined plot without any legends
+combined_plot
+
+# Save the plot
+ggsave("combined_plot_no_legends.png", plot = combined_plot, width = 15, height = 15)
+
+```

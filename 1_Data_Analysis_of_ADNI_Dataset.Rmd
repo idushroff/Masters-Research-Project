@@ -4,7 +4,7 @@ output: html_document
 date: "2023-03-29"
 ---
 
-# ADNI Data - Descriptive Analysis
+# 1_Data_Analysis_of_ADNI_Dataset
 
 ## Install and load the relevant packages
 
@@ -70,8 +70,7 @@ library(Hmisc)
 library(ADNIMERGE)
 
 # Checking out the different data files
-# View(adnimerge) 
-
+# #View(adnimerge) 
 ## clean viscode function 
 clean_viscode <- function(viscode) {
   as.numeric(as.character(factor(viscode, levels = c("sc",
@@ -103,7 +102,7 @@ adni_data <- adnimerge %>% mutate(DX = as.character(factor(DX, c("CN", "MCI", "D
 # Create a duplicate for data manipulation: 
 adni1 <- adni_data
 
-# View(adni1)
+#View(adni1)
 ```
 
 ## Data Exploration:
@@ -125,7 +124,7 @@ adni1 <- adni_data
 ## all the variables are numerical except DX which is a character. 
 
 ## see the whole data_set
-# View(AD1)
+# #View(AD1)
 
 ## column/variable names 
 # names(AD1)
@@ -175,56 +174,24 @@ Evaluate Imputation Quality: After imputation, assess the quality of imputed val
 # There are not a lot of rows with missing values for the features VISCODE, APOE4 and DX (in correlation with MMSE and trailsB score) so i decided to leave them all out 
 # remove rows where VISCODE = NA, APOE4 = NA
 adni2 <- adni1 %>% drop_na(VISCODE, DX, APOE4, MMSE, mPACCtrailsB)
-# View(adni2)
+# #View(adni2)
 # ----------------------------------------
 
 # It is not recommended to impute missing family datam so I decided to leave them out of adni2 for now. 
 # I am storing these excluded participants in adni_nofamhist for future reference. 
 adni_nofamhist <- subset(adni1, is.na(fam_hist_dad_dem) | is.na(fam_hist_dad_ad) | is.na(fam_hist_mum_dem)| is.na(fam_hist_mum_ad))
-# View the RIDs for the fam hist rows with NA values 
-# view(adni_nofamhist)
+# #View the RIDs for the fam hist rows with NA values 
+# #View(adni_nofamhist)
 
 # Remove rows of participants without any family history 
 adni3 <- adni2 %>% drop_na(fam_hist_dad_dem, fam_hist_dad_ad, fam_hist_mum_dem, fam_hist_mum_ad)
-# View(adni3)
+# #View(adni3)
 length(unique(adni3$RID))
 
 
 ```
 
 I used the fill function to impute missing data for the DX.bl row based on the DX given to a person for their 1st visit
-
-```{r}
-# # View the rows with missing DX.bl values in adni3
-# missingdxrows <- subset(adni3, is.na(DX.bl))
-# # View(missingdxrows)
-# 
-# # Function to fill missing values in DX.bl column
-# fill_missing_dxbl <- function(df) {
-#   df <- df %>%
-#     group_by(RID) %>%
-#     arrange(VISCODE) %>%
-#     slice_head(n = 1) %>%
-#     mutate(DX.bl = ifelse(is.na(DX.bl), DX, DX.bl)) %>%
-#     ungroup()
-#   return(df)
-# }
-# 
-# # Applying the function to fill missing values
-# missingdxrows <- fill_missing_dxbl(missingdxrows)
-# # View(missingdxrows)
-# 
-# # SKIPPED FOR NOW BECAUASE IT IS NOT REQUIRED IN TABLE01
-```
-
-Review the missing data:
-
-```{r}
-# gg_miss_var(missingdxrows) # plots the amount of missing values in each column of our data frame
-# vis_miss(missingdxrows) # creates a heat-map showing where the missing N/a values in our columns are. This is a useful function to figure our where your data is in bigger data frames. 
-```
-
-IGNORE THE missing values for the DX.bl for now as it is already captured in the DX column.
 
 ## Data Description:
 
@@ -240,38 +207,38 @@ IGNORE THE missing values for the DX.bl for now as it is already captured in the
 
 # prune the adni3 dataset to only have the columns we want in our table01
 adni4 <- adni3 %>% select(-DX.bl, -MMSE.bl, -mPACCtrailsB.bl, -EXAMDATE)
-View(adni4)
+# View(adni4)
+length(unique(adni1$RID))
+length(unique(adni2$RID))
+length(unique(adni3$RID))
+print("adni4")
+length(unique(adni4$RID))
+
 
 df <- adni4
 # Get time of AD event -- for each ID, arrange by time, pull out the rows with AD dx and take the first.
 progressors1 <- df %>% group_by(RID) %>% arrange(VISCODE) %>% filter(DX=="AD") %>% slice_head(n=1) %>% select(RID, VISCODE, DX, AGE, PTEDUCAT, PTGENDER, APOE4, MMSE, mPACCtrailsB, fam_hist_dad_dem, fam_hist_dad_ad, fam_hist_mum_dem, fam_hist_mum_ad)
-# view(progressors1)
+# #View(progressors1)
 
 # remove all participants from the progressors group who had a AD diagnosis at Viscode = 0 
 progressors <- progressors1 %>% filter(VISCODE!=0)
-# view(progressors)
+# #View(progressors)
 
 # for non converters you can do similar but take the last visit
 non_progressors <- df %>% group_by(RID) %>% arrange(VISCODE) %>% filter(!any(DX=="AD"), n()>1) %>% slice_tail(n=1) %>% select(RID, VISCODE, DX, AGE, PTEDUCAT, PTGENDER, APOE4, MMSE, mPACCtrailsB, fam_hist_dad_dem, fam_hist_dad_ad, fam_hist_mum_dem, fam_hist_mum_ad)
-# view(non_progressors)
+# #View(non_progressors)
 
 
 surv_df <- rbind(progressors, non_progressors) %>% mutate(event=as.numeric(DX=="AD"))
-# View(surv_df)
-
+# #View(surv_df)
+print('surv_df before')
+length(unique(surv_df$RID))
 
 count_tablev6 <- surv_df %>%
   group_by(event) %>%
   summarise(Count = n())
-View(count_tablev6)
-
+#View(count_tablev6)
 sum(count_tablev6$Count)
-
-# Remove rows with zero survival times
-surv_df <- surv_df %>% filter(VISCODE > 0)
-View(surv_df)
-# Check event encoding
-# table(surv_df$event)
 
 # Create the new column 'FH' by adding 'fam_hist_dad_ad' and 'fam_hist_mum_ad'
 surv_df$FH <- surv_df$fam_hist_dad_ad + surv_df$fam_hist_mum_ad
@@ -280,7 +247,14 @@ surv_df$FH <- surv_df$fam_hist_dad_ad + surv_df$fam_hist_mum_ad
 # Rename multiple columns using base R
 names(surv_df)[names(surv_df) == "PTGENDER"] <- "SEX"
 names(surv_df)[names(surv_df) == "PTEDUCAT"] <- "EDU"
-View(surv_df)
+#View(surv_df)
+
+# Remove rows with zero survival times
+surv_df <- surv_df %>% filter(VISCODE > 0)
+#View(surv_df)# Check event encoding
+# table(surv_df$event)
+print('surv_df after viscode filter')
+length(unique(surv_df$RID))
 
 ## TABLE 01
 # Create a variable list which we want in Table 1
@@ -292,6 +266,8 @@ catVars <- c("SEX")
 table1 <- CreateTableOne(vars = listVars, data = surv_df, factorVars = catVars, strata = c("event"))
 print(table1)
 
+# Save preprocessed data to a CSV file
+write.csv(surv_df, "preprocessed_data.csv", row.names=FALSE)
 
 ```
 
@@ -365,8 +341,7 @@ surv_df$mPACC_group <- factor(surv_df$mPACC_group, levels = c("Low", "Medium", "
     surv_df$VISCODE <- as.factor(surv_df$VISCODE)
 
     # split into two groups - over and under 60
-    surv_df$strata <- ifelse(surv_df$AGE >= 60, "over60", "under60") 
-    View(surv_df)
+    surv_df$strata <- ifelse(surv_df$AGE >= 60, "over60", "under60")     #View(surv_df)
 
 
     # Fit Kaplan-Meier survival curve for each gender
@@ -384,7 +359,7 @@ surv_df$mPACC_group <- factor(surv_df$mPACC_group, levels = c("Low", "Medium", "
 ```{r}
 
 # Calculate quantiles to divide the data into 3 equal groups
-quantiles <- quantile(surv_df$PTEDUCAT, probs = c(0, 1/3, 2/3, 1))
+quantiles <- quantile(surv_df$EDU, probs = c(0, 1/3, 2/3, 1))
 
 # Define function to categorize education levels
 categorize_education <- function(level) {
@@ -393,7 +368,7 @@ categorize_education <- function(level) {
 }
 
 # Apply the function to create a new column
-surv_df$education_group <- categorize_education(surv_df$PTEDUCAT)
+surv_df$education_group <- categorize_education(surv_df$EDU)
 
 # Convert the new column to a factor
 surv_df$education_group <- factor(surv_df$education_group, levels = c("Low", "Medium", "High"))
@@ -427,7 +402,9 @@ plot(KM, ylab="Survival Probability", xlab="VISCODE")
 
 ```{r}
 
-KM.Gender <- survfit(Surv(VISCODE, event) ~ PTGENDER, data=surv_df)
+surv_df$VISCODE <- as.numeric(surv_df$VISCODE)
+
+KM.Gender <- survfit(Surv(VISCODE, event) ~ SEX, data=surv_df)
 KM.Gender
 tidy(KM.Gender)
 
@@ -441,7 +418,7 @@ tidy(KM.APOE4)
 ```{r}
 
 # log rank test
-survdiff(Surv(VISCODE, event) ~ PTGENDER, data=surv_df)
+survdiff(Surv(VISCODE, event) ~ SEX, data=surv_df)
 
 ```
 
@@ -461,47 +438,54 @@ table(surv_df$fam_hist_dad_dem, surv_df$fam_hist_dad_ad)
 ```
 
 ```{r}
-
 library(survival)
 library(broom)
 library(ggplot2)
 library(dplyr)
 
-# List of variables to fit separately
-variables <- c("PTGENDER", "PTEDUCAT", "AGE", "APOE4", "MMSE", 
-               "mPACCtrailsB", "fam_hist_dad_ad", "fam_hist_mum_ad")
+# List of variables to fit separately with desired labels
+Features <- c("SEX", "EDU", "AGE", "APOE4", "MMSE", "mPACCtrailsB",  "fam_hist_mum_ad", "fam_hist_dad_ad")
+FeatureLabels <- c("SEX", "EDU", "AGE", "APOE4", "MMSE", "PACC", "FH-MUM AD", "FH-DAD AD")
 
 # Initialize an empty tibble to store results
 cox_results <- tibble()
 
-# Loop over variables and fit Cox models
-for (var in variables) {
+# Loop over Features and fit Cox models
+for (i in seq_along(Features)) {
+  var <- Features[i]
+  label <- FeatureLabels[i]
+  
   # Fit Cox model for each variable separately
   formula <- as.formula(paste("Surv(VISCODE, event) ~", var))
-  cox_model <- coxph(formula, data=surv_df)
+  cox_model <- coxph(formula, data = surv_df)
   
   # Tidy the results and store them in a tibble
   cox_tibble <- tidy(cox_model, exponentiate = TRUE, conf.int = TRUE)
   
-  # Add variable name to the results
-  cox_tibble <- cox_tibble %>% mutate(variable = var)
+  # Add variable name to the results with custom label
+  cox_tibble <- cox_tibble %>% mutate(variable = label)
   
   # Append to the results tibble
   cox_results <- bind_rows(cox_results, cox_tibble)
 }
 
-cox_results
-
-# Create a forest plot
-ggplot(cox_results, aes(y=variable, x=estimate, xmin=conf.low, xmax=conf.high)) + 
+# Create a forest plot with customized y-axis labels and no y-axis title
+forest_plot1 <- ggplot(cox_results, aes(y = variable, x = estimate, xmin = conf.low, xmax = conf.high)) + 
   geom_pointrange() + 
-  geom_vline(xintercept=1, color="red") + 
-  labs(x="Hazard Ratio", title="Hazard Ratios and 95% CIs") +
-  theme_classic()
+  geom_vline(xintercept = 1, color = "red") + 
+  labs(x = "Hazard Ratio") +
+  theme_classic() +
+  theme(axis.title.y = element_blank())  # Remove y-axis title
+forest_plot1
+# Save the updated plot
+ggsave("forest_plot1.png", plot = forest_plot1, width = 5, height = 5)
+```
+
+```{r}
 
 ```
 
-**Figure 1**: Forest plot displaying the hazard ratios and 95% confidence intervals for each variable from separate Cox proportional hazards models. Variables with hazard ratios greater than 1 (e.g., AGE, APOE4) indicate an increased risk of the event, while those with hazard ratios less than 1 (e.g., MMSE, mPACCtrailsB) indicate a protective effect. The red vertical line at HR = 1 represents no effect. Confidence intervals that do not cross the red line suggest statistically significant associations.
+**Figure 1**: Forest plot displaying the hazard ratios and 95% confidence intervals for each variable from separate Cox proportional hazards models. Features with hazard ratios greater than 1 (e.g., AGE, APOE4) indicate an increased risk of the event, while those with hazard ratios less than 1 (e.g., MMSE, mPACCtrailsB) indicate a protective effect. The red vertical line at HR = 1 represents no effect. Confidence intervals that do not cross the red line suggest statistically significant associations.
 
 ```{r}
 
@@ -535,3 +519,46 @@ The Cox proportional hazards models were fitted separately for each variable to 
 -   **fam_hist_mum_ad**: Similarly, a hazard ratio of 0.97 (95% CI: 0.77--1.22) indicates no significant association between maternal history of Alzheimer's disease and the hazard of the event.
 
 -   **mPACCtrailsB**: The hazard ratio of 0.87 (95% CI: 0.86--0.88) suggests that better performance on the mPACCtrailsB cognitive test is associated with a 13% reduction in the hazard of the event. This protective effect is statistically significant.
+
+```{r}
+# Loop over Features and fit Cox models
+for (i in seq_along(Features)) {
+  var <- Features[i]
+  label <- FeatureLabels[i]
+  
+  # Fit Cox model for each variable separately
+  formula <- as.formula(paste("Surv(VISCODE, event) ~", var))
+  cox_model <- coxph(formula, data = surv_df)
+  
+  # Tidy the results and store them in a tibble, including p-values
+  cox_tibble <- tidy(cox_model, exponentiate = TRUE, conf.int = TRUE, p.value = TRUE)
+  
+  # Add variable name to the results with custom label
+  cox_tibble <- cox_tibble %>% mutate(variable = label)
+  
+  # Append to the results tibble
+  cox_results <- bind_rows(cox_results, cox_tibble)
+}
+
+cox_results_rounded <- cox_results %>%
+  mutate(estimate = round(estimate, 2),
+         conf.low = round(conf.low, 2),
+         conf.high = round(conf.high, 2)) %>%
+  select(variable, estimate, conf.low, conf.high, p.value) %>%
+  arrange(variable)
+# Display the results with unrounded p-values
+print(cox_results_rounded)
+
+# Round the hazard ratio, confidence intervals, and p-values to 3 decimal places
+cox_results_rounded2 <- cox_results %>%
+  mutate(estimate = round(estimate, 2),
+         conf.low = round(conf.low, 2),
+         conf.high = round(conf.high, 2),
+         p.value = round(p.value, 3)) %>%  # Add rounding for p-values
+  select(variable, estimate, conf.low, conf.high, p.value) %>%
+  arrange(variable)
+
+# Display the results with p-values
+print(cox_results_rounded2)
+
+```
